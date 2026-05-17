@@ -1,0 +1,28 @@
+**************************************************************************** 
+**************************************************************************** 
+*                                                                          *
+* List of projects available for modelling by POSEIDON-R                   *
+*                                                                          *
+**************************************************************************** 
+**************************************************************************** 
+4		Total numbers of considered models   		
+GLB             Smod
+437             Nmod
+1               Npays     
+Global Ocean box system
+
+3BS             Smod
+3               Nmod
+1               Npays     
+Test 3-box system
+
+SCF             Smod
+176             Nmod
+3               Npays     
+Fukushima Scenario for whole box system
+
+BLS             Smod
+53              Nmod
+1               Npays     
+Black Sea model
+                    

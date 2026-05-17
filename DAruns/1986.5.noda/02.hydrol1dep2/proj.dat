@@ -1,0 +1,14 @@
+4          Imod
+True       Sed
+False      Local 
+Cs-137     Element  
+1          Nrang
+False       Initial (if (.True.)initial concentrations are read from a file)
+False      Dose    (if (.True.) doses are calculated)
+False      AdDose  (if (.True.) doses from addition pathways are calculated)
+2          FDCNTP (1-R.Helling, 2-S.Lepicard)
+1          FoodChainType (1-only pelagic, 2-bottom and pelagic)
+0          Ncstl
+1          Jcstl(1..Ncstl)
+2
+

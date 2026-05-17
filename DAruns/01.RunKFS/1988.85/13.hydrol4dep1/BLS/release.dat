@@ -1,0 +1,6 @@
+50	Nflprec,quantity	of	precipitation	files		
+2	Nflriv,	quantity	of	river	release	files
+0	Nfloth,	quantity	of	other	release	files
+Characteristics	of	observation				
+1	Nobs,	quantity	of	observation	moments	
+0.1		Observ(i),i=1,Nobs	-	observation	moments:	
