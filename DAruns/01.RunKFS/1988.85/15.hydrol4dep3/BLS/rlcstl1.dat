@@ -1,0 +1,9 @@
+Characteristics of <<Cs-137>> release from the coast 
+4   Nmsr, quantity of STEADINESS PERIODS 
+2   reltp (1-"point", 2-"step" (interval))
+1   jcstl
+1986         0.0      RLS( ,l, )-release moment or steadiness interval,RLS( , ,l)-releas power:
+1.0          2.0E+11
+3.0          0.0
+30.          0.0
+

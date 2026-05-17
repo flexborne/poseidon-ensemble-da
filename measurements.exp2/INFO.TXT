@@ -1,0 +1,2 @@
+data in files "1986.5.dat" and similar contain data collected by Nikitin et al + additionally - Polikarkpov (year 1988); 
+Those files were used in DA experiments performed in folders DAruns.03

@@ -1,0 +1,48 @@
+Food chain characteristics
+        a       K1        b        Kw                  T0.5tt                 dw     Preferences
+       (-) (kg/(kg.day)) (-)  (m3/(kg.day))            (days)                (-)        (-)
+                                            1        2        3        4                1	 2	  3	   4	    5	     6	      7	       8	9
+zpl  2.0E-01  1.0E+00  1.0E-03  1.5E+00  5.0E+00                             1.0E-01
+npf  5.0E-01  1.5E-02  1.0E-03  1.0E-01  5.0E+02  7.5E+01  2.0E+01  3.0E+00  2.5E-01
+pf   7.0E-01  5.5E-03  1.0E-03  7.5E-02  1.0E+03  2.0E+02  4.0E+01  5.0E+00  3.0E-01    
+mol  5.0E-01  6.0E-02  1.0E-03  1.5E-01  5.0E+01                             1.0E-01  6.0E-01  2.0E-01  0.0E+00  0.0E+00  0.0E+00  0.0E+00  0.0E+00  0.0E+00  2.0E-01  
+crs  5.0E-01  1.5E-02  1.0E-03  1.0E-01  1.0E+02                             1.0E-01  1.0E-01  8.0E-01  0.0E+00  0.0E+00  0.0E+00  0.0E+00  0.0E+00  0.0E+00  1.0E-01  
+inv  1.0E-01  2.0E-02  1.0E-03  2.0E-01  1.5E+01                             1.0E-01  0.0E+00  0.0E+00  5.0E-01  0.0E+00  0.0E+00  0.0E+00  0.0E+00  0.0E+00  5.0E-01  
+bf   5.0E-01  2.0E-03  1.0E-03  5.0E-02  5.0E+02  5.0E+01  2.0E+01  3.0E+00  2.5E-01  0.0E+00  0.0E+00  2.0E-01  6.0E-01  1.0E-01  1.0E-01  0.0E+00  0.0E+00  0.0E+00  
+bpf  7.0E-01  2.0E-03  1.0E-03  5.0E-02  1.0E+03  2.0E+02  4.0E+01  5.0E+00  3.0E-01  0.0E+00  0.0E+00  0.0E+00  3.0E-01  2.0E-01  2.0E-01  3.0E-01  0.0E+00  0.0E+00  
+tpf  7.0E-01  4.0E-03  1.0E-03  7.5E-02  1.0E+03  2.0E+02  4.0E+01  5.0E+00  3.0E-01  0.0E+00  0.0E+00  0.0E+00  2.5E-01  0.0E+00  2.5E-01  2.5E-01  2.5E-01  0.0E+00  
+TTM                                      1.0E-03  1.0E+00  1.0E-01  1.0E-02
+ftt                                      1.2E-01  8.0E-01  8.0E-02  3.0E-02
+1.0E-01   dw phpl
+1.0E-02   organic part of sediments
+2.5E-01   dw org. sed.
+1.0E-01   dw algae
+60        T0.5 algae (days)
+1.0       fish diffusion (1/year)
+
+Notation:						
+zpl - zooplankton
+npf - non-piscivorous fish
+pf  - piscivorous fish
+mol - mollusc
+crs - crustaceans
+inv - invertebrates
+bf  - bottom fish
+bpf - bottom predators
+                                                                                                                                                                 Indexes in the columns for T0.5tt are indicators of target tissue:
+	1 - bones;
+	2 - flesh;
+	3 - organs;
+	4 - stomac.
+Indexes in the columns of preferences correspond to:
+	1 - phytoplankton;
+	2 - zooplankton;
+	3 - org_sediments;
+	4 - invertebrates;
+	5 - mollusks;
+	6 - crustaceans;
+	7 - bottom fish;
+        8 - non-piscivorous fish;
+        9 - macroalgae.
+
+     
