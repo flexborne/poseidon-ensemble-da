@@ -1,0 +1,41 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDEs / editors
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Local env / secrets
+.env
+
+# Generated analysis artifacts
+DAruns/01.RunKFS/outputs/
+**/obs2pos.mat
+**/obs_pos.xls
+**/out_*.xlsx
+
+# Generated model outputs
+**/lastconc.xls
+**/Initconc.dat
+**/mat.out
+**/concsed.txt
+**/concwat_*.txt
+**/concbiol_*.txt
+
