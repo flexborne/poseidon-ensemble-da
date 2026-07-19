@@ -4,6 +4,11 @@ from pathlib import Path
 
 
 def write_poseidon(fname, vect, Lind, bnlev, header, footer, sed):
+    """Write a state vector in POSEIDON format (Initconc.dat) for model restart.
+
+    Header, footer and sediments (sed) are carried over unchanged; values are
+    taken from vect via the indices Lind[i, j].
+    """
     vect = list(vect)
     path = Path(fname)
     path.parent.mkdir(parents=True, exist_ok=True)

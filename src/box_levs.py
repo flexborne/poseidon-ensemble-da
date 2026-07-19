@@ -4,6 +4,10 @@ import numpy as np
 
 
 def box_levs() -> np.ndarray:
+    """Number of vertical levels in each box.
+
+    Index 0 is an unused dummy slot; valid boxes are 1..50.
+    """
     bnlev = np.zeros(51, dtype=int)
     bnlev[1:51] = 4
     bnlev[1:3] = 1

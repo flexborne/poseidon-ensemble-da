@@ -4,6 +4,10 @@ import numpy as np
 
 
 def Box_Neighbors(Nbox, brefnum=None, boxlats=None, boxlons=None):
+    """Symmetric box-adjacency matrix (hard-coded topology).
+
+    Note: the result is currently unused by the workflow.
+    """
     BoxNb = np.eye(Nbox, dtype=int)
 
     BoxNb[3, 4:8] = 1

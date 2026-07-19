@@ -29,6 +29,12 @@ Jind = None
 
 
 def main_KSF_LN(strdates=None, GSD=1.3):
+    """Kalman smoother analysis over several dates.
+
+    Jointly assimilates observations from all dates in strdates with temporal
+    localization (Tregularize_Covmatr_analit); the analysis is built for the last
+    date in the array. Writes updated Initconc.dat and out_<date>.xlsx summaries.
+    """
     global Lind, Iind, Jind
 
     if strdates is None:
@@ -159,6 +165,8 @@ def main_KSF_LN(strdates=None, GSD=1.3):
         Dsqrt @ (Lmatr.T),
     ))
 
+    # Observation perturbations - the only source of randomness (stochastic EnKF).
+    # Setting randn() to zero here makes the result fully deterministic/reproducible.
     obs_noise = np.zeros((Nobs, Nens), dtype=float)
     for ii in range(Nobs):
         for jj in range(Nens):

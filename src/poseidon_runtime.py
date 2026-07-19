@@ -6,6 +6,7 @@ from model_compat import copy_file, find_poseidon_folders, run_executable_in_dir
 
 
 def run_poseidon_all(date_dir, folder_names=None):
+    """Run Poseidon4.exe in every hydrol folder of the given date."""
     date_dir = Path(date_dir)
     if folder_names is None:
         folder_names = find_poseidon_folders(date_dir)
@@ -14,6 +15,7 @@ def run_poseidon_all(date_dir, folder_names=None):
 
 
 def copy_lastconc_to_initconc(src_date_dir, dst_date_dir, folder_names=None):
+    """Copy lastconc.xls -> Initconc.dat (restart for the next date)."""
     src_date_dir = Path(src_date_dir)
     dst_date_dir = Path(dst_date_dir)
     if folder_names is None:

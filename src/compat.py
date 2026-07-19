@@ -19,6 +19,7 @@ PROJECT_ROOT = MODULE_DIR.parent
 
 
 def resolve_path(path_like: str | os.PathLike) -> Path:
+    """Resolve a file by its path or relative to the module directory."""
     path = Path(path_like)
     if path.exists():
         return path
@@ -29,6 +30,7 @@ def resolve_path(path_like: str | os.PathLike) -> Path:
 
 
 def load_numeric_excel(path_like: str | os.PathLike) -> np.ndarray:
+    """Read numeric data from the active Excel sheet into an array (empty cells -> NaN)."""
     path = resolve_path(path_like)
     wb = load_workbook(path, data_only=True, read_only=True)
     ws = wb.active
@@ -49,6 +51,7 @@ def load_numeric_excel(path_like: str | os.PathLike) -> np.ndarray:
 
 
 def _normalize_2d(data) -> np.ndarray:
+    """Coerce scalar/1D/2D data to a 2D array for writing to Excel."""
     if np.isscalar(data):
         return np.array([[data]])
     arr = np.asarray(data)
@@ -60,6 +63,7 @@ def _normalize_2d(data) -> np.ndarray:
 
 
 def xlswrite_compat(path_like: str | os.PathLike, data, sheet_name: str = 'Sheet1') -> None:
+    """Write an array to a dedicated sheet of an Excel workbook."""
     path = Path(path_like)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
@@ -88,25 +92,30 @@ def xlswrite_compat(path_like: str | os.PathLike, data, sheet_name: str = 'Sheet
 
 
 def save_mat_compat(path_like: str | os.PathLike, **kwargs) -> None:
+    """Save variables to a .mat file."""
     savemat(path_like, kwargs)
 
 
 def load_mat_compat(path_like: str | os.PathLike):
+    """Load variables from a .mat file."""
     return loadmat(path_like, squeeze_me=True, struct_as_record=False)
 
 
 def model_print(name: str, value) -> None:
+    """Print a variable in a labelled block format (for inspecting intermediate results)."""
     print(f"\n{name} =\n")
     print(value)
     print()
 
 
 def find_poseidon_folders(date_path: str | os.PathLike) -> list[str]:
+    """Return the sorted list of hydrol folders (ensemble members) for a date."""
     date_dir = Path(date_path)
     return sorted([p.name for p in date_dir.glob('*hydrol*dep*') if p.is_dir()])
 
 
 def mkdir_warning(path_like: str | os.PathLike) -> None:
+    """Create a directory; if it already exists, print a warning."""
     path = Path(path_like)
     if path.exists():
         print('Warning: Directory already exists.')
@@ -115,6 +124,7 @@ def mkdir_warning(path_like: str | os.PathLike) -> None:
 
 
 def copy_matching(pattern: str, destination: str | os.PathLike) -> None:
+    """Copy files/folders matching a glob pattern to the destination."""
     dest = Path(destination)
     dest.mkdir(parents=True, exist_ok=True)
     for match in sorted(glob.glob(pattern)):
@@ -127,6 +137,7 @@ def copy_matching(pattern: str, destination: str | os.PathLike) -> None:
 
 
 def copy_file(src: str | os.PathLike, dst: str | os.PathLike) -> None:
+    """Copy a single file, creating the destination directory if needed."""
     src_p = Path(src)
     dst_p = Path(dst)
     dst_p.parent.mkdir(parents=True, exist_ok=True)
@@ -134,6 +145,7 @@ def copy_file(src: str | os.PathLike, dst: str | os.PathLike) -> None:
 
 
 def model_least-squares(A, b, atol: float = 1e-8, iter_lim: int = 10000) -> np.ndarray:
+    """Least-squares solve (scipy least-squares) with a convergence line printed."""
     result = scipy_least-squares(A, b, atol=atol, btol=atol, iter_lim=iter_lim, show=False)
     x = result[0]
     itn = int(result[2])
@@ -145,14 +157,17 @@ def model_least-squares(A, b, atol: float = 1e-8, iter_lim: int = 10000) -> np.n
 
 
 def is_windows() -> bool:
+    """Whether the current OS is Windows."""
     return os.name == 'nt'
 
 
 def _poseidon_exe_path(exe_name: str = 'Poseidon4.exe') -> Path:
+    """Path to the POSEIDON executable."""
     return poseidon_exe_path()
 
 
 def resolve_executable_command(exe_name: str = 'Poseidon4.exe') -> list[str]:
+    """Build the command to run the .exe: directly (Windows) or via wine (Linux/macOS)."""
     exe_path = _poseidon_exe_path(exe_name)
     if is_windows():
         return [str(exe_path)]
@@ -163,6 +178,7 @@ def resolve_executable_command(exe_name: str = 'Poseidon4.exe') -> list[str]:
 
 
 def run_executable_in_dir(directory: str | os.PathLike, exe_name: str = 'Poseidon4.exe') -> None:
+    """Run Poseidon4.exe in the given directory (working dir = that directory)."""
     folder_dir = Path(directory)
     exe_path = _poseidon_exe_path(exe_name)
     if not exe_path.exists():

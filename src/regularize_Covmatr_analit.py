@@ -7,6 +7,11 @@ from model_compat import load_numeric_excel
 
 
 def regularize_Covmatr_analit(CC, Iind, Jind, exclude=None, RcorH=150000, RcorV=100, fname_boxes='Box_surfareas_with_centers.xlsx'):
+    """Covariance localization by horizontal and vertical distance between boxes.
+
+    Damping factor exp(-DistH/RcorH)*exp(-DistV/RcorV); excluded boxes are made
+    independent. Box centres of mass are read from fname_boxes.
+    """
     if exclude is None:
         exclude = [1, 2, 3, 49, 40]
     exclude = set(int(x) for x in exclude)

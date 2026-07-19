@@ -4,6 +4,7 @@ import numpy as np
 
 
 def init_Hmatr(brefnum, breflev, Lind):
+    """Observation operator H (observation -> state component) for a single date."""
     brefnum = np.asarray(brefnum).ravel()
     breflev = np.asarray(breflev).ravel()
     Nobs = int(brefnum.size)

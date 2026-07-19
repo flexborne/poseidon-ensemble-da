@@ -4,6 +4,7 @@ import numpy as np
 
 
 def regularize_Covmatr(CC, Iind, Jind, exclude=None):
+    """Simple covariance regularization: zero out links of excluded boxes (make them independent)."""
     if exclude is None:
         exclude = [1, 2, 3, 49, 40]
     exclude = set(int(x) for x in exclude)

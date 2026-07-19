@@ -4,6 +4,12 @@ import numpy as np
 
 
 def IJT_Lind(bnlev, brefnum, breflev, Nobs_T):
+    """State index L <-> (box, level, date) — variant with a time dimension.
+
+    The state vector holds observation boxes from earlier dates plus the full
+    box grid at the analysis date. Returns Lind, Iind, Jind, Tind (0-based) and
+    Lind_extract used when writing the result (write_poseidon).
+    """
     brefnum = np.asarray(brefnum).ravel()
     breflev = np.asarray(breflev).ravel()
 

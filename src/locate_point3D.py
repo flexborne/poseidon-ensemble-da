@@ -2,6 +2,10 @@ from __future__ import annotations
 
 
 def locate_point3D(slon, slat, sdepth, boxnum, boxlons, boxlats, boxdepths, boxnlev, bdepths):
+    """Find the box(es) and vertical level a point (lon, lat, depth) falls into.
+
+    Returns bind (0-based box indices), bn (box numbers) and blev (level, 1-based).
+    """
     bind = []
     bn = []
     for i in range(len(boxnum)):

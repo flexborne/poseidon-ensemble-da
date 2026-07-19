@@ -10,6 +10,7 @@ from poseidon_runtime import run_poseidon_all
 
 
 def _copy_initconc_only(destination: Path) -> None:
+    """Copy only the Initconc.dat files from the template hydrol folders to the destination."""
     destination.mkdir(parents=True, exist_ok=True)
 
     for src in sorted(TEMPLATES_DIR.glob('*hydrol*dep*')):
@@ -26,6 +27,11 @@ def _copy_initconc_only(destination: Path) -> None:
 
 
 def runall_LN():
+    """Full sequential analysis-forecast cycle over all dates (filter-only, main_LN).
+
+    For each date: analysis -> copy Initconc.dat forward -> POSEIDON forecast to
+    the next date -> diagnostic comparison against observations.
+    """
     dates = ['1986.75', '1987.5', '1988.25', '1988.5', '1988.625', '1988.75', '1988.85', '1990.75', '1991.75', '2007.5']
     Nd = len(dates)
 

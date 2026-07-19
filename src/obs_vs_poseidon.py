@@ -9,6 +9,13 @@ from model_compat import load_numeric_excel, xlswrite_compat
 
 
 def obs_vs_poseidon(*args):
+    """Match observations to POSEIDON boxes.
+
+    Reads the observation file <date>.dat, geolocates each point to a box/level
+    (locate_point3D) and averages observations within a box. Returns the
+    observation vector obs, box/level references (brefnum, breflev) and geometry.
+    Arguments: ofile, obs_folder, fname_boxes, bdepths, [obs_pos output file].
+    """
     nargin = len(args)
     if nargin == 0:
         ofile = '1986.5.dat'

@@ -6,6 +6,11 @@ from box_levs import box_levs
 
 
 def read_poseidon(pfile=r'..\1986.5\01.hydrol1dep1\lastconc.xls', bnlev=None):
+    """Read a POSEIDON output file (lastconc.xls).
+
+    Returns arr (concentrations per box x level), header, footer (lines kept
+    unchanged) and sed (sediments, 2 columns).
+    """
     if bnlev is None:
         bnlev = box_levs()
     Nbox = len(bnlev) - 1

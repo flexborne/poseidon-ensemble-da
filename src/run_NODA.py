@@ -8,6 +8,11 @@ from poseidon_runtime import copy_lastconc_to_initconc, run_poseidon_all
 
 
 def run_NODA():
+    """Control cycle without data assimilation (No DA).
+
+    Only the POSEIDON forecast over the date sequence plus a diagnostic comparison
+    against observations - a baseline for assessing the effect of assimilation.
+    """
     script_dir = Path(__file__).resolve().parent
     dates = ['1986.75', '1987.5', '1988.25', '1988.5', '1988.625', '1988.75', '1988.85', '1990.75', '1991.75', '2007.5']
     Nd = len(dates)

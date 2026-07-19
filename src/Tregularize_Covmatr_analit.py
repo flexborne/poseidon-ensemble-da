@@ -7,6 +7,11 @@ from model_compat import load_numeric_excel
 
 
 def Tregularize_Covmatr_analit(CC, Iind, Jind, Tind, obstimes, exclude=None, RcorH=150000, RcorV=100, RcorT=1, fname_boxes='Box_surfareas_with_centers.xlsx'):
+    """Covariance localization by horizontal, vertical AND temporal distance (smoother).
+
+    Damping factor exp(-DistH/RcorH)*exp(-DistV/RcorV)*exp(-DistT/RcorT);
+    excluded boxes are made independent.
+    """
     if exclude is None:
         exclude = [1, 2, 3, 49, 40]
     exclude = set(int(x) for x in exclude)

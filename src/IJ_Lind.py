@@ -4,6 +4,11 @@ import numpy as np
 
 
 def IJ_Lind(bnlev):
+    """Map between the linear state index L and the pair (box i, level j).
+
+    Returns Lind[i, j] = L (1-based value) plus the inverse arrays Iind, Jind
+    (0-based box/level indices) for a single date.
+    """
     Nb = len(bnlev) - 1
     MaxLev = int(np.max(bnlev))
     Lind = np.zeros((Nb, MaxLev), dtype=int)

@@ -4,6 +4,7 @@ import math
 
 
 def Dist_geocords(lat1, lon1, lat2, lon2):
+    """Distance between two geographic points (lat/lon in degrees), in metres."""
     R = 6373.0
     fi1 = lat1 * 3.1416 / 180.0
     fi2 = lat2 * 3.1416 / 180.0

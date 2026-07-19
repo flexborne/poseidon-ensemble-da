@@ -31,6 +31,12 @@ Jind = None
 
 
 def main_LN(*args):
+    """EnKF (filter) analysis for a single date.
+
+    Full step: observations -> ensemble covariance -> localization ->
+    least-squares solve for each ensemble member -> write updated Initconc.dat
+    and out_<date>.xlsx summaries. Arguments: strdate, [GSD].
+    """
     global Lind, Iind, Jind
     nargin = len(args)
     if nargin == 0:
@@ -136,6 +142,8 @@ def main_LN(*args):
     Gmatr_p2 = Dsqrt @ (Lmatr.T)
     Gmodif = np.concatenate((Gmatr_p1, Gmatr_p2), axis=0)
 
+    # Observation perturbations - the only source of randomness (stochastic EnKF).
+    # Setting randn() to zero here makes the result fully deterministic/reproducible.
     obs_noise = np.zeros((Nobs, Nens), dtype=float)
     for ii in range(Nobs):
         for jj in range(Nens):

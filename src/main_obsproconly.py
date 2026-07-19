@@ -20,6 +20,11 @@ from read_poseidon import read_poseidon
 
 
 def main_obsproconly(*args):
+    """Observation processing and diagnostics only (no analysis / data assimilation).
+
+    Compares each ensemble member's forecast against observations and writes
+    out_<date>.xlsx (sheets per hydrol folder and Ens). Arguments: strdate, [posfolds].
+    """
     nargin = len(args)
     if nargin < 2:
         posfolds = [

@@ -10,6 +10,7 @@ from poseidon_runtime import copy_lastconc_to_initconc, run_poseidon_all
 
 
 def _copy_local_hydrols(script_dir: Path, dest_dir: Path):
+    """Copy the local hydrol folders (with updated Initconc.dat) to the destination."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     for src in sorted(script_dir.glob('*hydrol*dep*')):
         if src.is_dir():
@@ -19,6 +20,12 @@ def _copy_local_hydrols(script_dir: Path, dest_dir: Path):
 
 
 def run_LN_KSF3():
+    """Full analysis-forecast cycle combining filter and smoother.
+
+    For dates whose +/-3-month observation window covers neighbouring dates it
+    uses the smoother main_KSF_LN, otherwise the filter main_LN; then runs the
+    POSEIDON forecast and moves to the next date.
+    """
     script_dir = Path(__file__).resolve().parent
     dates = ['1986.75', '1987.5', '1988.25', '1988.5', '1988.625', '1988.75', '1988.85', '1990.75', '1991.75', '2007.5']
     Nd = len(dates)

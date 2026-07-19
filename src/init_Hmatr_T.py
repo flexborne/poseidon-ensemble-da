@@ -4,6 +4,7 @@ import numpy as np
 
 
 def init_Hmatr_T(brefnum, breflev, Lind, Tind):
+    """Observation operator H that also accounts for the observation time index (smoother)."""
     brefnum = np.asarray(brefnum).ravel()
     breflev = np.asarray(breflev).ravel()
     Tind = np.asarray(Tind).ravel()
