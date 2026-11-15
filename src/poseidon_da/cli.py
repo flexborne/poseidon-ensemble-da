@@ -56,24 +56,22 @@ def _cmd_run(args):
 
 
 def _cmd_diagnose(args):
-    from .runner import RunContext
-    from .workflow import write_forecast_diagnostics
     config = load_config(args.case)
     if _report_problems(config):
         return 1
     out = Path(args.output) if args.output else _default_output(config, 'diagnose')
-    ctx = RunContext.isolated(out, runs_root=config.runs_root)
-    obs, members = write_forecast_diagnostics(config, ctx, config.target_time)
-    print(f'diagnose {config.case_id}: {obs.shape[0]} observations, {len(members)} members -> {out}')
+    result = api.diagnose(config, out, force=args.force)
+    s = result.steps[0]
+    print(f'diagnose {config.case_id}: {result.status} ({s["n_obs"]} observations, {s["n_members"]} members)')
+    print(f'  outputs: {out}')
     return 0
 
 
 def _cmd_run_cycle(args):
-    from . import cycle
     config = load_config(args.case)
     out = Path(args.output) if args.output else _default_output(config, 'cycle')
-    result = cycle.run_cycle(config, out, mode=args.mode, dates=args.dates or None,
-                             perturb=not args.no_perturb, seed=args.seed, force=args.force)
+    result = api.run_cycle(config, out, mode=args.mode, dates=args.dates or None,
+                           perturb=not args.no_perturb, seed=args.seed, force=args.force)
     print(f'run-cycle {config.case_id}: {result.status} (mode={result.manifest["mode"]})')
     for step in result.steps:
         tag = step.get('source', '')
@@ -100,7 +98,7 @@ def build_parser():
             sp.add_argument('--no-perturb', action='store_true',
                             help='disable observation perturbations (deterministic)')
             sp.add_argument('--seed', type=int, default=None, help='RNG seed for perturbations')
-        if name in ('analyze', 'run'):
+        if name in ('analyze', 'run', 'diagnose'):
             sp.add_argument('--force', action='store_true', help='overwrite a non-empty output directory')
         sp.set_defaults(func=func)
 

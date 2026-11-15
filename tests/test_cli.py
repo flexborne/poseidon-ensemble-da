@@ -27,7 +27,7 @@ def test_example_case_validates():
 @requires_data
 def test_api_analyze_runs(tmp_path):
     config = load_config(EXAMPLE_CASE)
-    result = api.analyze(config, perturb=False, output_dir=tmp_path)
+    result = api.analyze(config, perturb=False)
     assert result.target == '1988.5'
     assert result.log_states.shape[1] == 24
 
@@ -61,7 +61,7 @@ def test_api_run_refuses_dirty_output_dir(tmp_path):
 @requires_data
 def test_result_has_physical_coordinates(tmp_path):
     config = load_config(EXAMPLE_CASE)
-    r = api.analyze(config, perturb=False, output_dir=tmp_path)
+    r = api.analyze(config, perturb=False)
     n = r.log_states.shape[0]
     assert r.box_id.shape == (n,) and r.layer_id.shape == (n,) and r.time.shape == (n,)
     assert r.obs_box_id.shape == r.observations.shape
@@ -88,7 +88,7 @@ def test_api_analyze_accepts_numpy_generator(tmp_path):
     import numpy as np
     config = load_config(EXAMPLE_CASE)
     # must not raise AttributeError on a modern Generator
-    r = api.analyze(config, perturb=True, rng=np.random.default_rng(0), output_dir=tmp_path)
+    r = api.analyze(config, perturb=True, rng=np.random.default_rng(0))
     assert np.all(np.isfinite(r.log_states))
 
 

@@ -12,7 +12,8 @@ from .publish import assert_safe_dest, staged_publish
 from .results import build_manifest, export_result, write_manifest
 from .runner import RunContext
 
-__all__ = ['load_config', 'analyze', 'write_analysis', 'run', 'Config', 'AnalysisResult', 'RunResult']
+__all__ = ['load_config', 'analyze', 'write_analysis', 'run', 'diagnose', 'run_cycle',
+           'Config', 'AnalysisResult', 'RunResult']
 
 
 def _require_valid(config: Config) -> None:
@@ -44,11 +45,10 @@ def _analyze(config: Config, ctx: RunContext, perturb, rng):
         perturb=perturb, rng=rng)
 
 
-def analyze(config: Config, *, perturb=True, rng=None, seed=None, output_dir=None) -> AnalysisResult:
+def analyze(config: Config, *, perturb=True, rng=None, seed=None) -> AnalysisResult:
     """Validate the case, compute the analysis, and return the result (no files written)."""
     _require_valid(config)
-    base = Path(output_dir) if output_dir else config.runs_root
-    ctx = RunContext.isolated(base, runs_root=config.runs_root)
+    ctx = RunContext.isolated(config.runs_root, runs_root=config.runs_root)
     result, _ = _analyze(config, ctx, perturb, _rng(seed, rng))
     return result
 
@@ -118,3 +118,30 @@ def run(config: Config, output_dir, *, perturb=True, rng=None, seed=None, force=
                  'npz': str(out / 'analysis.npz'), 'manifest': str(out / 'manifest.json')},
         manifest=manifest,
     )
+
+
+def diagnose(config: Config, output_dir, *, date=None, force=False) -> RunResult:
+    """Validate, compare the forecast at `date` (default target) against observations, publish atomically."""
+    from . import __version__
+    assert_safe_dest(output_dir, protected_inputs(config))
+    _require_valid(config)
+    date = date or config.target_time
+
+    with staged_publish(output_dir, force) as staging:
+        ctx = RunContext.isolated(staging, runs_root=config.runs_root)
+        obs, members = workflow.write_forecast_diagnostics(config, ctx, date)
+        steps = [{'step': 'diagnose', 'date': date, 'status': 'ok',
+                  'n_obs': int(obs.shape[0]), 'n_members': len(members)}]
+        manifest = build_manifest(config, None, __version__, steps,
+                                  localization_used=config.localization,
+                                  perturbation={'enabled': False, 'seed': None},
+                                  dates=[date], member_order=members, mode='diagnose')
+        write_manifest(manifest, staging)
+
+    out = Path(output_dir)
+    return RunResult(status='ok', steps=steps,
+                     outputs={'outputs_dir': str(out / 'outputs'), 'manifest': str(out / 'manifest.json')},
+                     manifest=manifest)
+
+
+from .cycle import run_cycle  # noqa: E402  (re-export: the public API includes the cycle)

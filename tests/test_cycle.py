@@ -128,8 +128,12 @@ def test_run_cycle_smoother_with_mock_model(tmp_path):
     # both analysis dates use a smoother window (not the filter degenerate case)
     assert analyses and all(a['provenance'].get('kind') == 'smoother' for a in analyses)
     assert res.manifest['mode'] == 'smoother' and res.manifest['window_years'] == 0.25
-    # forecasts were produced for the lookahead dates
-    assert any(s['step'] == 'forecast' for s in res.steps)
+    # forecasts were produced for the lookahead dates, each recording its restart source
+    forecasts = [s for s in res.steps if s['step'] == 'forecast']
+    assert forecasts and all(s['provenance'].get('restart_from') for s in forecasts)
+    # the manifest links steps to hashed per-date inputs
+    assert res.manifest['steps'] == res.steps
+    assert res.manifest['inputs']['ensemble']
     assert (tmp_path / 'manifest.json').exists()
 
 

@@ -108,6 +108,19 @@ def _open_fd_count():
         return len(os.listdir('/proc/self/fd'))
 
 
+@requires_data
+def test_diagnose_publishes_atomically(tmp_path):
+    config = load_config(EXAMPLE_CASE)
+    out = tmp_path / 'd'
+    res = api.diagnose(config, out)
+    assert res.status == 'ok' and (out / 'manifest.json').exists()
+    with pytest.raises(FileExistsError):
+        api.diagnose(config, out)
+
+
+# ---- 2.4: the PTY runner releases its file descriptor ------------------------
+
+
 @pytest.mark.skipif(sys.platform == 'win32', reason='pty is POSIX-only')
 def test_run_in_pty_does_not_leak_fds(tmp_path):
     from poseidon_da.runner import run_executable_in_dir

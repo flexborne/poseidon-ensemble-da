@@ -49,15 +49,19 @@ def export_result(result: AnalysisResult, output_dir) -> dict:
     return {'npz': npz, 'json': out / 'result.json'}
 
 
-def build_manifest(config, result: AnalysisResult, package_version: str, steps,
-                   *, localization_used, perturbation) -> dict:
-    """Manifest recording versions, normalized config, input checksums and per-step status.
+def build_manifest(config, result, package_version: str, steps, *, localization_used, perturbation,
+                   dates=None, member_order=None, mode=None, window_years=None) -> dict:
+    """One manifest builder for every operation (analyze / run / diagnose / cycle).
 
-    Hashes the actually-read inputs: geometry, the measurement file of each date, and every
-    ensemble state (lastconc.xls) that contributed to the background, so the provenance is
-    sufficient to identify the exact inputs of the run.
+    Records versions, normalized config and per-step provenance, and hashes the actually-read
+    inputs: geometry, the measurement file of each date, and every ensemble state (lastconc.xls)
+    of the hashed dates, so each step's inputs are identifiable without storing ensemble copies.
+    `dates`/`member_order` default to the single-window analysis (result required if omitted).
     """
     import scipy
+
+    dates = list(dates) if dates is not None else list(config.observation_times)
+    member_order = list(member_order) if member_order is not None else list(result.member_ids)
 
     def _h(path):
         try:
@@ -67,24 +71,25 @@ def build_manifest(config, result: AnalysisResult, package_version: str, steps,
 
     inputs = {'geometry': {'path': str(config.geometry), 'sha256': _h(config.geometry)},
               'measurements': {}, 'ensemble': {}}
-    for d in config.observation_times:
+    for d in dates:
         inputs['measurements'][d] = _h(config.measurements_dir / f'{d}.dat')
-        inputs['ensemble'][d] = {m: _h(config.runs_root / d / m / 'lastconc.xls')
-                                 for m in result.member_ids}
+        inputs['ensemble'][d] = {m: _h(config.runs_root / d / m / 'lastconc.xls') for m in member_order}
 
     return {
         'package_version': package_version,
         'schema_version': config.schema_version,
         'case_id': config.case_id,
-        'target_time': result.target,
-        'observation_times': list(config.observation_times),
+        'target_time': result.target if result is not None else config.target_time,
+        'mode': mode,
+        'dates': dates,
+        'window_years': window_years,
         'gsd': config.gsd,
         'bdepths': config.bdepths,
         'localization_used': localization_used,
         'perturbation': perturbation,
-        'member_order': list(result.member_ids),
+        'member_order': member_order,
         'library_versions': {'numpy': np.__version__, 'scipy': scipy.__version__},
-        'diagnostics': result.diagnostics,
+        'diagnostics': result.diagnostics if result is not None else None,
         'inputs': inputs,
         'steps': steps,
     }

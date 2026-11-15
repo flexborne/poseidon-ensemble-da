@@ -21,7 +21,7 @@ from .domain import AnalysisWindow, RunResult
 from .geometry import box_levels
 from .config import protected_inputs
 from .publish import assert_safe_dest, staged_publish
-from .results import export_result, write_manifest
+from .results import build_manifest, export_result, write_manifest
 from .runner import (RunContext, copy_lastconc_to_initconc, find_members,
                      publish_initconc, run_poseidon_all)
 
@@ -230,12 +230,11 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
 
         executed = _execute(plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging)
 
-        manifest = {'package_version': __version__, 'case_id': config.case_id, 'mode': mode,
-                    'dates': list(dates), 'member_order': list(member_set),
-                    'window_years': config.cycle_window_years if mode == 'smoother' else None,
-                    'gsd': config.gsd, 'bdepths': config.bdepths, 'localization_used': config.localization,
-                    'perturbation': {'enabled': bool(perturb), 'seed': seed},
-                    'steps': executed}
+        manifest = build_manifest(
+            config, None, __version__, executed,
+            localization_used=config.localization, perturbation={'enabled': bool(perturb), 'seed': seed},
+            dates=dates, member_order=member_set, mode=mode,
+            window_years=config.cycle_window_years if mode == 'smoother' else None)
         write_manifest(manifest, staging)
 
     out = Path(output_dir)
