@@ -1,5 +1,7 @@
-"""Box grid: vertical level counts, localization depths, and box centres of mass."""
+"""Box grid: vertical level counts, localization depths, and the box geometry object."""
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -66,11 +68,30 @@ def validate_geometry(geometry_path) -> list:
     return problems
 
 
-def load_box_centers(geometry_path) -> dict:
-    """Return {0-based box index -> (lat, lon)} from the geometry workbook (Sheet1)."""
-    AAA = load_numeric_excel(geometry_path, sheet_name='Sheet1')
-    boxn = AAA[:, 0]
-    lat = AAA[:, 9]
-    lon = AAA[:, 10]
-    return {int(boxn[i]) - 1: (float(lat[i]), float(lon[i]))
-            for i in range(len(boxn)) if not np.isnan(boxn[i])}
+@dataclass(frozen=True)
+class Geometry:
+    """Box geometry read once from the workbook: ids, lat/lon bounds, level counts, centres."""
+
+    boxnum: np.ndarray       # (Nbox,) 1-based box ids
+    boxlats: np.ndarray      # (Nbox, 2) [south, north]
+    boxlons: np.ndarray      # (Nbox, 2) [west, east]
+    boxnlev: np.ndarray      # (Nbox,) vertical level count
+    centers: dict            # {0-based box index -> (lat, lon)} centre of mass
+
+    @property
+    def nbox(self) -> int:
+        return int(self.boxnum.shape[0])
+
+    @property
+    def maxlev(self) -> int:
+        return int(self.boxnlev.max())
+
+
+def load_geometry(geometry_path) -> Geometry:
+    """Read the geometry workbook (Sheet1) once into a Geometry (call validate_geometry first)."""
+    rows = load_numeric_excel(geometry_path, sheet_name='Sheet1')
+    rows = rows[np.isfinite(rows[:, 0])]
+    boxnum = rows[:, 0]
+    centers = {int(boxnum[i]) - 1: (float(rows[i, 9]), float(rows[i, 10])) for i in range(len(boxnum))}
+    return Geometry(boxnum=boxnum, boxlats=rows[:, [4, 5]], boxlons=rows[:, [6, 7]],
+                    boxnlev=rows[:, 8].astype(int), centers=centers)

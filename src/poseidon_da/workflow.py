@@ -9,7 +9,7 @@ from .analysis import analysis_update
 from .config import DEFAULT_BDEPTHS, normalize_localization
 from .covariance import estimate_covariance, localize_covariance
 from .domain import AnalysisResult, AnalysisWindow
-from .geometry import box_levels, layer_depths_from_bdepths, load_box_centers
+from .geometry import box_levels, layer_depths_from_bdepths, load_geometry
 from .observations import aggregate_observations
 from .physical import to_concentration
 from .poseidon_io import read_state, write_poseidon, xlswrite
@@ -56,12 +56,12 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
         raise FileNotFoundError(f'No ensemble members for date {target}')
     M = len(members)
     bnlev = box_levels()
-    centers = load_box_centers(geometry_path)
+    geometry = load_geometry(geometry_path)             # read the workbook once, reuse per date
 
     # observations (per date), time-checked and stacked
     batches, times = [], []
     for d in dates:
-        batches.append(aggregate_observations(f'{measurements_dir}/{d}.dat', geometry_path,
+        batches.append(aggregate_observations(f'{measurements_dir}/{d}.dat', geometry,
                                               bdepths, expected_time=float(d), time_tol=TIME_TOL))
         times.append(float(d))
     nobs_per_date = [b['values'].shape[0] for b in batches]
@@ -92,7 +92,7 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
     Xf = np.log(Xf)
 
     # covariance -> localization -> analysis
-    B, _ = localize_covariance(estimate_covariance(Xf), Iind, Jind, centers, depb,
+    B, _ = localize_covariance(estimate_covariance(Xf), Iind, Jind, geometry.centers, depb,
                                loc['exclude'], loc['horizontal_m'], loc['vertical_m'],
                                Tind=Tind, obstimes=times, RcorT=loc['temporal_years'])
     R = sigma ** 2 * np.eye(values.shape[0])
@@ -144,7 +144,8 @@ def write_forecast_diagnostics(config, ctx: RunContext, date, bnlev=None):
     """
     if bnlev is None:
         bnlev = box_levels()
-    batch = aggregate_observations(str(config.measurements_dir / f'{date}.dat'), str(config.geometry),
+    geometry = load_geometry(config.geometry)
+    batch = aggregate_observations(str(config.measurements_dir / f'{date}.dat'), geometry,
                                    config.bdepths, expected_time=float(date))
     obs, brn, brl = batch['values'], batch['brefnum'], batch['breflev']
     members = find_members(ctx.date_dir(date))

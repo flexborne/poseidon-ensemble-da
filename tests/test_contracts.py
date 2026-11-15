@@ -87,21 +87,24 @@ def test_read_poseidon_rejects_invalid_box_id(tmp_path, bad_first_token):
 
 @requires_data
 def test_aggregate_rejects_mislabelled_time(tmp_path):
+    from poseidon_da.geometry import load_geometry
     from poseidon_da.observations import aggregate_observations
     from poseidon_da.paths import box_surfareas_with_centers_path, MEASUREMENTS_DIR
+    geom = load_geometry(box_surfareas_with_centers_path())
     src = (MEASUREMENTS_DIR / '1987.5.dat').read_text().splitlines()
     patched = [src[0]] + ['\t'.join(['1999'] + ln.split('\t')[1:]) for ln in src[1:] if ln.strip()]
     dat = tmp_path / '1987.5.dat'
     dat.write_text('\n'.join(patched) + '\n')
     with pytest.raises(ValueError, match='time column'):
-        aggregate_observations(str(dat), str(box_surfareas_with_centers_path()),
-                               [25, 100, 500, 2000], expected_time=1987.5)
+        aggregate_observations(str(dat), geom, [25, 100, 500, 2000], expected_time=1987.5)
 
 
 @requires_data
 def test_aggregate_rejects_nonpositive_raw(tmp_path):
+    from poseidon_da.geometry import load_geometry
     from poseidon_da.observations import aggregate_observations
     from poseidon_da.paths import box_surfareas_with_centers_path, MEASUREMENTS_DIR
+    geom = load_geometry(box_surfareas_with_centers_path())
     src = (MEASUREMENTS_DIR / '1987.5.dat').read_text().splitlines()
     rows = [ln for ln in src[1:] if ln.strip()]
     cols = rows[0].split('\t')
@@ -110,8 +113,7 @@ def test_aggregate_rejects_nonpositive_raw(tmp_path):
     dat = tmp_path / '1987.5.dat'
     dat.write_text('\n'.join([src[0]] + rows) + '\n')
     with pytest.raises(ValueError, match='non-positive'):
-        aggregate_observations(str(dat), str(box_surfareas_with_centers_path()),
-                               [25, 100, 500, 2000], expected_time=1987.5)
+        aggregate_observations(str(dat), geom, [25, 100, 500, 2000], expected_time=1987.5)
 
 
 def test_run_poseidon_all_does_not_accept_stale_output(tmp_path):
