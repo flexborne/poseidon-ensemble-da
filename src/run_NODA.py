@@ -1,34 +1,38 @@
 from __future__ import annotations
 
-from pathlib import Path
-import shutil
-
 from main_obsproconly import main_obsproconly
+from model_compat import find_poseidon_folders
 from poseidon_runtime import copy_lastconc_to_initconc, run_poseidon_all
+from run_context import RunContext
+
+DATES = ['1986.75', '1987.5', '1988.25', '1988.5', '1988.625',
+         '1988.75', '1988.85', '1990.75', '1991.75', '2007.5']
 
 
-def run_NODA():
+def run_NODA(run_ctx=None):
     """Control cycle without data assimilation (No DA).
 
-    Only the POSEIDON forecast over the date sequence plus a diagnostic comparison
-    against observations - a baseline for assessing the effect of assimilation.
+    Only the POSEIDON forecast over the date sequence plus a diagnostic
+    comparison against observations - a baseline for assessing the effect of
+    assimilation. All date directories are resolved through run_ctx.
     """
-    script_dir = Path(__file__).resolve().parent
-    dates = ['1986.75', '1987.5', '1988.25', '1988.5', '1988.625', '1988.75', '1988.85', '1990.75', '1991.75', '2007.5']
+    if run_ctx is None:
+        run_ctx = RunContext.default()
+    dates = DATES
     Nd = len(dates)
-    foldlist = sorted([p.name for p in (script_dir.parent / dates[0]).glob('*hydrol*dep*') if p.is_dir()])
+    foldlist = find_poseidon_folders(run_ctx.date_dir(dates[0]))
 
     i = 0
     while i < Nd - 1:
         i += 1
         nextdate = dates[i]
         for j in range(i, i + 2):
-            run_poseidon_all(script_dir.parent / dates[j - 1])
+            run_poseidon_all(run_ctx.date_dir(dates[j - 1]), expected_members=foldlist)
             if j == i + 1:
-                main_obsproconly(dates[j - 1])
-                shutil.copy2(script_dir / f'out_{nextdate}.xlsx', script_dir.parent / dates[j - 1] / f'out_{nextdate}.xlsx')
+                main_obsproconly(dates[j - 1], run_ctx=run_ctx)
                 break
-            copy_lastconc_to_initconc(script_dir.parent / dates[j - 1], script_dir.parent / dates[j], foldlist)
+            copy_lastconc_to_initconc(run_ctx.date_dir(dates[j - 1]),
+                                      run_ctx.date_dir(dates[j]), foldlist)
 
 
 if __name__ == '__main__':

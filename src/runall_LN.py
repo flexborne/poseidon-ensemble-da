@@ -1,63 +1,43 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from main_LN import main_LN
 from main_obsproconly import main_obsproconly
 from model_compat import copy_file
-from paths import TEMPLATES_DIR, date_dir, output_xlsx_path
-from poseidon_runtime import run_poseidon_all
+from poseidon_runtime import publish_initconc, run_poseidon_all
+from run_context import RunContext
+
+DATES = ['1986.75', '1987.5', '1988.25', '1988.5', '1988.625',
+         '1988.75', '1988.85', '1990.75', '1991.75', '2007.5']
 
 
-def _copy_initconc_only(destination: Path) -> None:
-    """Copy only the Initconc.dat files from the template hydrol folders to the destination."""
-    destination.mkdir(parents=True, exist_ok=True)
-
-    for src in sorted(TEMPLATES_DIR.glob('*hydrol*dep*')):
-        if not src.is_dir():
-            continue
-
-        init_src = src / 'Initconc.dat'
-        if not init_src.exists():
-            continue
-
-        dst_dir = destination / src.name
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        copy_file(init_src, dst_dir / 'Initconc.dat')
-
-
-def runall_LN():
+def runall_LN(run_ctx=None):
     """Full sequential analysis-forecast cycle over all dates (filter-only, main_LN).
 
-    For each date: analysis -> copy Initconc.dat forward -> POSEIDON forecast to
-    the next date -> diagnostic comparison against observations.
+    For each date: analysis -> publish Initconc.dat forward -> POSEIDON forecast
+    to the next date -> diagnostic comparison against observations.
     """
-    dates = ['1986.75', '1987.5', '1988.25', '1988.5', '1988.625', '1988.75', '1988.85', '1990.75', '1991.75', '2007.5']
+    if run_ctx is None:
+        run_ctx = RunContext.default()
+    dates = DATES
     Nd = len(dates)
 
     for i in range(Nd - 1):
         curdate = dates[i]
         nextdate = dates[i + 1]
 
-        main_LN(curdate)
+        main_LN(curdate, run_ctx=run_ctx)
 
-        cur_anl_dir = date_dir(curdate) / 'ANL'
-        _copy_initconc_only(cur_anl_dir)
-
-        out_cur = output_xlsx_path(curdate)
+        anl_dir = run_ctx.date_dir(curdate) / 'ANL'
+        publish_initconc(run_ctx.templates_dir, anl_dir)
+        out_cur = run_ctx.output_xlsx(curdate)
         if out_cur.exists():
-            copy_file(out_cur, cur_anl_dir / f'out_{curdate}.xlsx')
+            copy_file(out_cur, anl_dir / f'out_{curdate}.xlsx')
 
-        next_dir = date_dir(nextdate)
-        _copy_initconc_only(next_dir)
-
-        run_poseidon_all(next_dir)
+        publish_initconc(run_ctx.templates_dir, run_ctx.date_dir(nextdate))
+        run_poseidon_all(run_ctx.date_dir(nextdate))
 
         if i < Nd - 2:
-            main_obsproconly(nextdate)
-            out_next = output_xlsx_path(nextdate)
-            if out_next.exists():
-                copy_file(out_next, next_dir / f'out_{nextdate}.xlsx')
+            main_obsproconly(nextdate, run_ctx=run_ctx)
 
 
 if __name__ == '__main__':

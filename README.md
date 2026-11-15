@@ -35,7 +35,7 @@ The workflow implements an **ensemble Kalman filter / smoother**: it updates the
 3. Read ensemble member states from POSEIDON outputs (`lastconc.xls`) and build the state vector and the observation operator **H**.
 4. Estimate the forecast-error covariance matrix **C** from the ensemble.
 5. Apply **localization**: damp distant correlations by horizontal and vertical distance (and, in the smoother, by time difference). Certain boxes (Mediterranean, Marmara, Azov Seas, etc.) are made independent.
-6. Cast the analysis as a **least-squares problem**: stack the observation-fit term (`invO2·H`, weighted by the observation error) with a background term from the LDL factorization of the inverse covariance `C⁻¹`. Solve with `least-squares` for each ensemble member using **perturbed observations** (stochastic EnKF).
+6. Cast the analysis as the quadratic (Kalman) problem — minimize `(x − xf)ᵀ B⁻¹ (x − xf) + (H x − y)ᵀ R⁻¹ (H x − y)` — and solve it **in observation space**, `Xa = Xf + B Hᵀ (H B Hᵀ + R)⁻¹ (Y − H Xf)`, for every ensemble member using **perturbed observations** (stochastic EnKF).
 7. Write the result back into `Initconc.dat` restart files and summarize it into `out_<date>.xlsx`.
 
 **Filter vs smoother.**
@@ -80,7 +80,7 @@ poseidon-ensemble-da/
   DAruns/
     01.RunKFS/
       templates/                # hydrol folders where updated Initconc.dat is written
-      outputs/                  # auxiliary outputs (out_*.xlsx, obs2pos.mat, obs_pos.xls)
+      outputs/                  # auxiliary outputs (out_*.xlsx, obs2pos.mat, obs_pos.xlsx)
       1986.75/  1987.5/  ...    # working POSEIDON run directories per date
 ```
 
@@ -96,7 +96,7 @@ poseidon-ensemble-da/
 | `src/` | Python code (all workflow modules). |
 | `DAruns/01.RunKFS/templates/` | Template hydrol folders where updated `Initconc.dat` files are written. |
 | `DAruns/01.RunKFS/<date>/` | Working POSEIDON run directories for each date. |
-| `DAruns/01.RunKFS/outputs/` | Auxiliary Python outputs: `out_<date>.xlsx`, `obs2pos.mat`, `obs_pos.xls`. |
+| `DAruns/01.RunKFS/outputs/` | Auxiliary Python outputs: `out_<date>.xlsx`, `obs2pos.mat`, `obs_pos.xlsx`. |
 
 ---
 
@@ -129,16 +129,18 @@ poseidon-ensemble-da/
 | `regularize_Covmatr.py` | Simple covariance regularization: makes excluded boxes independent. |
 | `regularize_Covmatr_analit.py` | Covariance localization by **horizontal and vertical** distance (analytic damping function). |
 | `Tregularize_Covmatr_analit.py` | Localization by **horizontal, vertical and temporal** distance — for the smoother. |
-| `read_poseidon.py` | Reads a POSEIDON output file (`lastconc.xls`): concentrations per box/level, header, footer, sediments. |
+| `read_poseidon.py` | Reads and **validates** a POSEIDON output file (`lastconc.xls`): concentrations per box/level, header, footer, sediments. Rejects missing/duplicated box rows and non-positive active concentrations. |
 | `write_poseidon.py` | Writes a file in POSEIDON format (`Initconc.dat`) for model restart. |
+| `analysis.py` | **Pure analysis core** (no I/O): `observation_indices` (validated gather, rejects non-existent box/level) and `analysis_update` (observation-space Kalman update via a single Cholesky factorization), plus the `AnalysisResult` record. |
 
 ### Infrastructure
 
 | File | What it does |
 |---|---|
 | `paths.py` | Centralized paths to project directories and files. |
-| `model_compat.py` | Compatibility layer: Excel read/write, `least-squares`, running the `.exe`, file copying, labelled printing. |
-| `poseidon_runtime.py` | Runs `Poseidon4.exe` in hydrol folders and copies `lastconc.xls` → `Initconc.dat`. |
+| `run_context.py` | `RunContext` — the single set of input/output directories passed to every step; `RunContext.isolated(workdir)` gives tests and concurrent runs their own output tree. |
+| `model_compat.py` | Compatibility layer: Excel read/write (named sheets), running the `.exe`, file copying, labelled printing. |
+| `poseidon_runtime.py` | Runs `Poseidon4.exe` in hydrol folders (with existence/output checks) and copies restart files between dates. |
 
 ---
 
@@ -158,7 +160,7 @@ poseidon-ensemble-da/
 **In `DAruns/01.RunKFS/outputs/`:**
 - `out_<date>.xlsx` — analysis summaries (sheets `obs`, one per hydrol folder, and `Ens`);
 - `obs2pos.mat` — intermediate observation-mapping data;
-- `obs_pos.xls` — observation diagnostics.
+- `obs_pos.xlsx` — observation diagnostics (sheets `obs`, `sigc`, `bnum`, `box_vs_allobs`).
 
 **In each hydrol folder after POSEIDON runs:**
 - `lastconc.xls`, `concsed.txt`, `concwat_*.txt`, `concbiol_*.txt`, `mat.out`.
@@ -199,6 +201,47 @@ python src/main_obsproconly.py 1987.5
 
 > The **forecast step** requires `Poseidon4.exe`. On Linux/macOS it runs via `wine` (which must be installed). The analysis modules (`main_LN`, `main_KSF_LN`, `main_obsproconly`) work without the `.exe`.
 
+The analysis functions accept an explicit `run_ctx` and a `perturb` flag:
+
+```python
+from run_context import RunContext
+from main_LN import main_LN
+
+ctx = RunContext.isolated("results/run-01")      # outputs under results/run-01, reads real data
+result = main_LN("1986.75", run_ctx=ctx, perturb=False)   # deterministic run
+print(result.log_states.shape, result.geometric_mean.shape)
+```
+
+---
+
+## Development, tests, and reference case
+
+The analysis is solved in **observation space** —
+`Xa = Xf + B Hᵀ (H B Hᵀ + R)⁻¹ (Y − H Xf)` (`analysis.analysis_update`) — computed with
+one Cholesky factorization. This replaces the earlier explicit `B⁻¹` + LDL + per-member
+least-squares. It is the exact least-squares minimizer, so it reproduces the previous result to
+within least-squares's convergence tolerance (~1e-6), checked against golden arrays.
+
+**Reference case (golden arrays).** `tests/reference/*.npz` holds the per-member analysis
+log-states for the filter (`1986.75`) and the smoother (`[1988.625, 1988.5]`), captured
+from the previous solver with perturbations zeroed. Regenerate with:
+
+```bash
+python tools/make_reference.py      # then: git checkout -- DAruns
+```
+
+**Tests.** Regression (vs golden), analysis-core algebra (closed-form Gaussian update,
+full = reduced window, decoupled coordinate unchanged), input contracts (bad box/level,
+malformed `lastconc.xls`, runner preconditions) and Excel I/O:
+
+```bash
+pip install pytest
+python -m pytest tests/ -q
+```
+
+Tests that need the experiment archive skip automatically when it is absent; all runs
+write only to an isolated `RunContext`, never into `DAruns/`.
+
 ---
 
 ## Dependencies
@@ -206,3 +249,4 @@ python src/main_obsproconly.py 1987.5
 - `numpy`
 - `scipy`
 - `openpyxl`
+- `pytest` (tests only)

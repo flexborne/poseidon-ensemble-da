@@ -9,7 +9,6 @@ from pathlib import Path
 import numpy as np
 from openpyxl import Workbook, load_workbook
 from scipy.io import loadmat, savemat
-from scipy.sparse.linalg import least-squares as scipy_least-squares
 
 from paths import SRC_DIR, poseidon_exe_path
 
@@ -29,11 +28,23 @@ def resolve_path(path_like: str | os.PathLike) -> Path:
     return path
 
 
-def load_numeric_excel(path_like: str | os.PathLike) -> np.ndarray:
-    """Read numeric data from the active Excel sheet into an array (empty cells -> NaN)."""
+def load_numeric_excel(path_like: str | os.PathLike, sheet_name=None) -> np.ndarray:
+    """Read numeric data from a named Excel sheet (or the active one) into an array.
+
+    Empty/non-numeric cells become NaN. Passing sheet_name avoids depending on
+    which sheet happens to be active when the workbook was saved; a missing named
+    sheet raises KeyError instead of silently reading the wrong one.
+    """
     path = resolve_path(path_like)
     wb = load_workbook(path, data_only=True, read_only=True)
-    ws = wb.active
+    if sheet_name is not None:
+        names = wb.sheetnames
+        if sheet_name not in names:
+            wb.close()
+            raise KeyError(f"sheet '{sheet_name}' not found in {path}; available: {names}")
+        ws = wb[sheet_name]
+    else:
+        ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
     nrows = len(rows)
     ncols = max((len(r) for r in rows), default=0)
@@ -69,9 +80,8 @@ def xlswrite_compat(path_like: str | os.PathLike, data, sheet_name: str = 'Sheet
     if path.exists():
         try:
             wb = load_workbook(path)
-        except Exception:
-            wb = Workbook()
-            wb.active.title = 'Sheet1'
+        except Exception as exc:
+            raise IOError(f'xlswrite_compat: cannot open existing workbook {path}: {exc}') from exc
     else:
         wb = Workbook()
         wb.active.title = 'Sheet1'
@@ -142,18 +152,6 @@ def copy_file(src: str | os.PathLike, dst: str | os.PathLike) -> None:
     dst_p = Path(dst)
     dst_p.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src_p, dst_p)
-
-
-def model_least-squares(A, b, atol: float = 1e-8, iter_lim: int = 10000) -> np.ndarray:
-    """Least-squares solve (scipy least-squares) with a convergence line printed."""
-    result = scipy_least-squares(A, b, atol=atol, btol=atol, iter_lim=iter_lim, show=False)
-    x = result[0]
-    itn = int(result[2])
-    r1norm = float(result[3])
-    denom = float(np.linalg.norm(np.asarray(b).ravel()))
-    relres = 0.0 if denom == 0.0 else r1norm / denom
-    print(f"least-squares converged at iteration {itn} to a solution with relative residual {relres:.3g}.")
-    return x
 
 
 def is_windows() -> bool:

@@ -17,7 +17,7 @@ def regularize_Covmatr_analit(CC, Iind, Jind, exclude=None, RcorH=150000, RcorV=
     exclude = set(int(x) for x in exclude)
     depb = [25 / 2, (25 + 100) / 2, (100 + 500) / 2, (500 + 2000) / 2]
 
-    AAA = load_numeric_excel(fname_boxes)
+    AAA = load_numeric_excel(fname_boxes, sheet_name='Sheet1')
     boxn = AAA[:, 0].astype(int)
     boxlat = AAA[:, 9]
     boxlon = AAA[:, 10]

@@ -38,7 +38,7 @@ def obs_vs_poseidon(*args):
     else:
         obs_pos_outfile = args[4]
 
-    BBB = load_numeric_excel(fname_boxes)
+    BBB = load_numeric_excel(fname_boxes, sheet_name='Sheet1')
     boxnum = BBB[:, 0]
     boxlats = np.zeros((BBB.shape[0], 2), dtype=float)
     boxlats[:, 0] = BBB[:, 4]

@@ -3,181 +3,118 @@ from __future__ import annotations
 import sys
 
 import numpy as np
-import scipy.linalg as la
-from scipy.io import loadmat, savemat
+from scipy.io import savemat
 
-from Box_Neighbors import Box_Neighbors
 from IJ_Lind import IJ_Lind
+from analysis import AnalysisResult, analysis_update, observation_indices
 from box_levs import box_levs
-from init_Hmatr import init_Hmatr
-from model_compat import model_least-squares, model_print, mkdir_warning, xlswrite_compat
+from model_compat import xlswrite_compat
 from obs_vs_poseidon import obs_vs_poseidon
-from paths import (
-    MEASUREMENTS_DIR,
-    TEMPLATES_DIR,
-    box_surfareas_with_centers_path,
-    date_dir,
-    obs2pos_mat_path,
-    obs_pos_xls_path,
-    output_xlsx_path,
-)
+from paths import MEASUREMENTS_DIR, box_surfareas_with_centers_path
 from read_poseidon import read_poseidon
 from regularize_Covmatr_analit import regularize_Covmatr_analit
+from run_context import RunContext
 from write_poseidon import write_poseidon
 
-Lind = None
-Iind = None
-Jind = None
 
-
-def main_LN(*args):
+def main_LN(strdate='1986.75', GSD=1.3, run_ctx=None, perturb=True, rng=None):
     """EnKF (filter) analysis for a single date.
 
-    Full step: observations -> ensemble covariance -> localization ->
-    least-squares solve for each ensemble member -> write updated Initconc.dat
-    and out_<date>.xlsx summaries. Arguments: strdate, [GSD].
+    Reads the ensemble forecast, estimates and localizes the background
+    covariance, and solves the analysis in observation space for every member.
+    Writes updated Initconc.dat restart files and out_<date>.xlsx, and returns
+    an AnalysisResult.
+
+    perturb=False zeroes the observation perturbations (deterministic run); rng
+    is an optional numpy Generator for reproducible perturbations.
     """
-    global Lind, Iind, Jind
-    nargin = len(args)
-    if nargin == 0:
-        strdate = '1986.75'
-    else:
-        strdate = args[0]
-    if nargin < 2:
-        GSD = 1.3
-    else:
-        GSD = args[1]
+    if run_ctx is None:
+        run_ctx = RunContext.default()
+    if rng is None:
+        rng = np.random
 
     CovPerturb = 1.0
-    rel2ens = False
-
     RcorH = 100000
     RcorV = 100
+    sigma = float(np.log(GSD))              # observation error std in log-space
+    boxes_with_centers = str(box_surfareas_with_centers_path())
 
-    areg = float(np.log(GSD))
-    method = 1
-
-    boxes_with_centers = box_surfareas_with_centers_path()
-    date_dir_cur = date_dir(strdate)
-
-    d = sorted([p for p in date_dir_cur.glob('*hydrol*dep*') if p.is_dir()])
-    if not d:
+    date_dir_cur = run_ctx.date_dir(strdate)
+    posfolds = sorted(p.name for p in date_dir_cur.glob('*hydrol*dep*') if p.is_dir())
+    if not posfolds:
         raise FileNotFoundError(f'No Poseidon folders found for date {strdate}')
-    posfolds = [p.name for p in d]
 
-    obsready = False
+    obs, brefnum, breflev, box_vs_allobs, boxlats, boxlons = obs_vs_poseidon(
+        f'{strdate}.dat',
+        str(MEASUREMENTS_DIR.resolve()),
+        boxes_with_centers,
+        [25, 100, 500, 2000],
+        str(run_ctx.obs_pos_xlsx()),
+    )
+    savemat(str(run_ctx.obs2pos_mat()), {
+        'obs': obs, 'brefnum': brefnum, 'breflev': breflev,
+        'boxlats': boxlats, 'boxlons': boxlons,
+    })
+    xlswrite_compat(str(run_ctx.output_xlsx(strdate)), np.concatenate((obs, brefnum), axis=1), 'obs')
 
-    if obsready:
-        s = loadmat(obs2pos_mat_path(), squeeze_me=True)
-        obs = np.asarray(s['obs'], dtype=float).reshape(-1, 1)
-        brefnum = np.asarray(s['brefnum'], dtype=int).reshape(-1, 1)
-        breflev = np.asarray(s['breflev'], dtype=int).reshape(-1, 1)
-        boxlats = np.asarray(s['boxlats'], dtype=float)
-        boxlons = np.asarray(s['boxlons'], dtype=float)
-    else:
-        obs, brefnum, breflev, box_vs_allobs, boxlats, boxlons = obs_vs_poseidon(
-            f'{strdate}.dat',
-            str(MEASUREMENTS_DIR.resolve()),
-            str(boxes_with_centers),
-            [25, 100, 500, 2000],
-            str(obs_pos_xls_path()),
-        )
-        savemat(obs2pos_mat_path(), {
-            'obs': obs,
-            'brefnum': brefnum,
-            'breflev': breflev,
-            'boxlats': boxlats,
-            'boxlons': boxlons,
-        })
-        xlswrite_compat(str(output_xlsx_path(strdate)), np.concatenate((obs, brefnum), axis=1), 'obs')
     Nobs = obs.shape[0]
-
-    obs = np.log(obs)
-
-    invO2 = np.zeros((Nobs, Nobs), dtype=float)
-    model_print('invO2', invO2)
-    for i in range(Nobs):
-        invO2[i, i] = 1.0 / areg
+    y = np.log(obs).reshape(-1, 1)          # assimilated values, log-space
 
     bnlev = box_levs()
-    Box_Neighbors(np.size(bnlev, 1) if np.ndim(bnlev) > 1 else np.size(bnlev, 0), brefnum, boxlats, boxlons)
     Lind, Iind, Jind = IJ_Lind(bnlev)
-    model_print('Lind', Lind)
-    model_print('Iind', Iind)
-    model_print('Jind', Jind)
-    Np = np.size(Iind)
-
-    Hmatr = init_Hmatr(brefnum, breflev, Lind)
+    Np = int(np.size(Iind))
+    obs_idx = observation_indices(brefnum, breflev, Lind)
 
     Nens = len(posfolds)
     Ens = np.zeros((Np, Nens), dtype=float)
-    Sens = [None] * Nens
-    for i in range(Nens):
-        pfile = date_dir_cur / posfolds[i] / 'lastconc.xls'
-        arr, pheader, pfooter, sed = read_poseidon(str(pfile), bnlev)
+    headers = [None] * Nens
+    footers = [None] * Nens
+    sediments = [None] * Nens
+    for i, posfold in enumerate(posfolds):
+        arr, header, footer, sed = read_poseidon(str(date_dir_cur / posfold / 'lastconc.xls'), bnlev)
         for L in range(Np):
-            ii = int(np.asarray(Iind).ravel()[L])
-            jj = int(np.asarray(Jind).ravel()[L])
-            Ens[L, i] = arr[ii, jj]
-        Sens[i] = sed
+            Ens[L, i] = arr[int(Iind[L]), int(Jind[L])]
+        headers[i], footers[i], sediments[i] = header, footer, sed
 
-    Ens = np.log(Ens)
+    Xf = np.log(Ens)                        # background log-states
 
-    CC = np.cov(Ens, bias=False)
-    CC1, LocM = regularize_Covmatr_analit(
-        CC, Iind, Jind, [1, 2, 3, 49, 50], RcorH, RcorV, str(boxes_with_centers)
-    )
-
-    if rel2ens:
-        CovDiag = Hmatr @ np.diag(CC1)
-        for i in range(Nobs):
-            invO2[i, i] = 1.0 / areg / np.sqrt(CovDiag[i])
-
-    Covr_1 = np.linalg.inv(CC1)
-
-    Lmatr, Dmatr, perm = la.ldl(Covr_1, lower=True, hermitian=True)
-    Dsqrt = np.sqrt(Dmatr)
-
-    Gmatr_p1 = invO2 @ Hmatr
-    Gmatr_p2 = Dsqrt @ (Lmatr.T)
-    Gmodif = np.concatenate((Gmatr_p1, Gmatr_p2), axis=0)
+    CC = np.cov(Xf, bias=False)
+    B, LocM = regularize_Covmatr_analit(CC, Iind, Jind, [1, 2, 3, 49, 50], RcorH, RcorV, boxes_with_centers)
+    R = sigma ** 2 * np.eye(Nobs)
 
     # Observation perturbations - the only source of randomness (stochastic EnKF).
-    # Setting randn() to zero here makes the result fully deterministic/reproducible.
-    obs_noise = np.zeros((Nobs, Nens), dtype=float)
-    for ii in range(Nobs):
-        for jj in range(Nens):
-            obs_noise[ii, jj] = obs[ii, 0] + (1 / invO2[ii, ii]) * np.random.randn()
+    # perturb=False zeroes them for a deterministic, reproducible run.
+    Y = np.tile(y, (1, Nens))
+    if perturb:
+        for ii in range(Nobs):
+            for jj in range(Nens):
+                Y[ii, jj] = y[ii, 0] + sigma * rng.randn()
 
-    sol = np.zeros((Np, Nens), dtype=float)
-    for i in range(Nens):
-        ymodif1 = invO2 @ obs_noise[:, i].reshape(-1, 1)
-        ymodif2 = Dsqrt @ (Lmatr.T @ Ens[:, i].reshape(-1, 1))
-        ymodif = np.concatenate((ymodif1, ymodif2), axis=0)
+    sol = analysis_update(B, obs_idx, Y, R, Xf)   # (Np, Nens) analysis log-states
 
-        if method == 1:
-            sol[:, i] = model_least-squares(Gmodif, ymodif.ravel(), 1e-8, 10000)
-        elif method == 2:
-            raise NotImplementedError
-        else:
-            print('Method is unknown')
-            print(method)
-            raise ValueError('Method is unknown')
+    for i, posfold in enumerate(posfolds):
+        out_dir = run_ctx.template_dir(posfold)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        analysed = Xf[:, i] + CovPerturb * (sol[:, i] - Xf[:, i])
+        write_poseidon(
+            str(out_dir / 'Initconc.dat'),
+            np.exp(analysed), Lind, bnlev, headers[i], footers[i], sediments[i],
+        )
+        xlswrite_compat(str(run_ctx.output_xlsx(strdate)), np.exp(sol[obs_idx, i]).reshape(-1, 1), posfold)
 
-        out_dir = TEMPLATES_DIR / posfolds[i]
-        mkdir_warning(out_dir)
-        ofname = out_dir / 'Initconc.dat'
-        if i == 0:
-            write_poseidon(str(ofname), np.exp(sol[:, i]), Lind, bnlev, pheader, pfooter, Sens[i])
-        else:
-            write_poseidon(str(ofname), np.exp(Ens[:, i] + CovPerturb * (sol[:, i] - Ens[:, i])), Lind, bnlev, pheader, pfooter, Sens[i])
+    geo_mean = np.exp(np.mean(sol, axis=1))
+    xlswrite_compat(str(run_ctx.output_xlsx(strdate)), geo_mean[obs_idx].reshape(-1, 1), 'Ens')
 
-        xlswrite_compat(str(output_xlsx_path(strdate)), (Hmatr @ np.exp(sol[:, i])).reshape(-1, 1), posfolds[i])
-
-    ens = np.exp(np.mean(sol, axis=1))
-    xlswrite_compat(str(output_xlsx_path(strdate)), (Hmatr @ ens).reshape(-1, 1), 'Ens')
-
-    return obs, None
+    return AnalysisResult(
+        target=strdate,
+        member_ids=list(posfolds),
+        obs_indices=obs_idx,
+        observations=y.ravel(),
+        log_states=sol,
+        concentrations=np.exp(sol),
+        geometric_mean=geo_mean,
+        diagnostics={'Nobs': Nobs, 'Nstate': Np, 'Nens': Nens},
+    )
 
 
 if __name__ == '__main__':
