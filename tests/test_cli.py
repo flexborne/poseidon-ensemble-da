@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import EXAMPLE_CASE, HAS_DATA
+from conftest import requires_data, EXAMPLE_CASE
 
 from poseidon_da import api
 from poseidon_da.config import load_config, validate
 from poseidon_da.domain import AnalysisWindow
 
-requires_data = pytest.mark.skipif(not HAS_DATA, reason='experiment archive not present')
 
 
 def test_analysis_window_requires_target_last():

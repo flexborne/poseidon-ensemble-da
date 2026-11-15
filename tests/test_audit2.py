@@ -6,13 +6,12 @@ import sys
 
 import pytest
 
-from conftest import EXAMPLE_CASE, HAS_DATA
+from conftest import requires_data, EXAMPLE_CASE
 
 from poseidon_da import api
 from poseidon_da.config import load_config, schema_problems, validate
 from poseidon_da.cycle import run_cycle
 
-requires_data = pytest.mark.skipif(not HAS_DATA, reason='experiment archive not present')
 
 
 # ---- 2.1: an output directory may never overlap the dataset inputs ------------
@@ -71,8 +70,8 @@ def test_default_localization_exclude_is_immutable():
     a = normalize_localization()
     b = normalize_localization()
     assert a is not b and a['exclude'] == b['exclude']
-    with pytest.raises(AttributeError):
-        a['exclude'].append(4)        # tuple has no append; cannot corrupt the shared default
+    assert isinstance(a['exclude'], tuple)                 # immutable, cannot be corrupted in place
+    assert normalize_localization({'exclude': [1, 2, 3]})['exclude'] == (1, 2, 3)   # list override coerced
 
 
 # ---- 2.3: analyze publishes atomically, never a mix of two runs ---------------
@@ -287,6 +286,30 @@ def test_staged_publish_rejects_file_destination(tmp_path):
     with pytest.raises(NotADirectoryError):
         with staged_publish(dest):
             pass
+
+
+def test_staged_publish_restores_backup_on_rename_failure(tmp_path, monkeypatch):
+    # exercise the actual crash-during-publish recovery: the previous run must survive intact
+    import os
+    from pathlib import Path
+    from poseidon_da import publish
+    dest = tmp_path / 'out'
+    dest.mkdir()
+    (dest / 'orig.txt').write_text('original')
+    real_rename = os.rename
+
+    def flaky(src, dst):
+        if Path(src).name.startswith('.out.staging'):      # fail only the staging -> dest rename
+            raise OSError('simulated rename failure')
+        return real_rename(src, dst)
+
+    monkeypatch.setattr(publish.os, 'rename', flaky)
+    with pytest.raises(OSError, match='simulated'):
+        with publish.staged_publish(dest, force=True) as staging:
+            (staging / 'new.txt').write_text('new')
+    assert (dest / 'orig.txt').read_text() == 'original'   # backup restored
+    assert not (dest / 'new.txt').exists()
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith('.out.')] == []  # no leftovers
 
 
 def test_cli_validate_bad_case_returns_1(tmp_path):

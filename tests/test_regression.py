@@ -8,14 +8,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from conftest import HAS_DATA, REF
+from conftest import requires_data, REF
 
 from poseidon_da.config import DEFAULT_BDEPTHS, DEFAULT_GSD, normalize_localization
 from poseidon_da.domain import AnalysisWindow
 from poseidon_da import workflow
 from poseidon_da.paths import box_surfareas_with_centers_path, MEASUREMENTS_DIR
 
-requires_data = pytest.mark.skipif(not HAS_DATA, reason='experiment archive not present')
 TOL = 5e-6
 GEOM = str(box_surfareas_with_centers_path())
 MEAS = str(MEASUREMENTS_DIR)

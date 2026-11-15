@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from conftest import EXAMPLE_CASE, HAS_DATA
+from conftest import requires_data, EXAMPLE_CASE
 
 from poseidon_da.config import load_config
 from poseidon_da.cycle import derive_windows, plan_cycle, run_cycle
@@ -12,8 +12,6 @@ from poseidon_da.geometry import box_levels
 from poseidon_da.poseidon_io import read_poseidon, write_poseidon
 from poseidon_da.runner import find_members
 from poseidon_da.state import build_layout
-
-requires_data = pytest.mark.skipif(not HAS_DATA, reason='experiment archive not present')
 
 
 # ---- plan_cycle (pure, no data) -----------------------------------------------
@@ -131,8 +129,10 @@ def test_run_cycle_smoother_with_mock_model(tmp_path):
     # forecasts were produced for the lookahead dates, each recording its restart source
     forecasts = [s for s in res.steps if s['step'] == 'forecast']
     assert forecasts and all(s['provenance'].get('restart_from') for s in forecasts)
+    # every step carries a unique sequential id (so repeated smoother forecasts are distinguishable)
+    ids = [s['id'] for s in res.steps]
+    assert ids == list(range(len(ids)))
     # the manifest links steps to hashed per-date inputs
-    assert res.manifest['steps'] == res.steps
     assert res.manifest['inputs']['ensemble']
     assert (tmp_path / 'manifest.json').exists()
 

@@ -27,6 +27,8 @@ def _first_lastconc():
 _LASTCONC = _first_lastconc()
 HAS_DATA = _LASTCONC is not None
 
+requires_data = pytest.mark.skipif(not HAS_DATA, reason='experiment archive not present')
+
 
 def a_lastconc():
     return _LASTCONC

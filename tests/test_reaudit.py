@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from conftest import EXAMPLE_CASE, HAS_DATA, a_lastconc
+from conftest import requires_data, EXAMPLE_CASE, a_lastconc
 
 from poseidon_da import api
 from poseidon_da.config import load_config, resolve_perturbation, validate
@@ -14,7 +14,6 @@ from poseidon_da.cycle import run_cycle
 from poseidon_da.geometry import box_levels
 from poseidon_da.poseidon_io import read_poseidon, read_state
 
-requires_data = pytest.mark.skipif(not HAS_DATA, reason='experiment archive not present')
 BNLEV = box_levels()
 
 
@@ -65,7 +64,6 @@ def test_run_cycle_requires_equal_member_set(tmp_path):
 
 # ---- R2: an unsafe date cannot write outside the output directory -------------
 
-@requires_data
 def test_run_cycle_rejects_unsafe_date(tmp_path):
     config = load_config(EXAMPLE_CASE)
     sentinel = tmp_path / 'victim'
@@ -153,7 +151,6 @@ def test_read_poseidon_rejects_nan_sediment(tmp_path):
 
 # ---- R5b: malformed bdepths are rejected by validate --------------------------
 
-@requires_data
 @pytest.mark.parametrize('bd', [[], [25, 100], [25, 100, 50, 2000]])
 def test_validate_rejects_bad_bdepths(bd):
     config = load_config(EXAMPLE_CASE)

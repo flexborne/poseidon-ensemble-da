@@ -6,13 +6,12 @@ import sys
 import numpy as np
 import pytest
 
-from conftest import HAS_DATA, a_lastconc
+from conftest import requires_data, a_lastconc
 
 from poseidon_da.geometry import box_levels
 from poseidon_da.poseidon_io import read_poseidon
 from poseidon_da.runner import run_poseidon_all
 
-requires_data = pytest.mark.skipif(not HAS_DATA, reason='experiment archive not present')
 BNLEV = box_levels()
 
 
