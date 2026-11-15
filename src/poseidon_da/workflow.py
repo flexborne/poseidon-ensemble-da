@@ -6,59 +6,43 @@ from dataclasses import dataclass
 import numpy as np
 
 from .analysis import analysis_update
+from .config import DEFAULT_BDEPTHS, DEFAULT_LOCALIZATION
 from .covariance import estimate_covariance, localize_covariance
 from .domain import AnalysisResult, AnalysisWindow
 from .geometry import box_levels, layer_depths_from_bdepths, load_box_centers
 from .observations import aggregate_observations
 from .poseidon_io import extract_physical_time, read_poseidon, write_poseidon, xlswrite
 from .runner import RunContext, find_members
-from .state import (build_layout_single, build_layout_window, observation_indices,
-                    validate_observation_coords)
+from .state import build_layout, observation_indices, validate_observation_coords
 
-DEFAULT_BDEPTHS = [25, 100, 500, 2000]
-DEFAULT_EXCLUDE = [1, 2, 3, 49, 50]
-DEFAULT_LOCALIZATION = {'horizontal_m': 100000.0, 'vertical_m': 100.0,
-                        'temporal_years': 1.0, 'exclude': DEFAULT_EXCLUDE}
 TIME_TOL = 1e-6
 
 
 @dataclass
 class RestartPayload:
-    """Everything needed to write restart files; keeps member order explicit."""
+    """What write_restarts/write_outputs need, with member order kept explicit."""
 
     bnlev: np.ndarray
-    write_index: np.ndarray            # Lind (filter) or lind_extract (window)
+    write_index: np.ndarray
     anl_ind_start: int
     members: list
-    metas: list                        # per member: (header, footer, sed)
+    metas: list                # per member: (header, footer, sed)
     batches: list
     dates: list
 
 
-def _draw_normal(rng):
-    # supports np.random module / RandomState (.standard_normal) and Generator (.standard_normal)
-    if hasattr(rng, 'standard_normal'):
-        return float(rng.standard_normal())
-    return float(rng.randn())
-
-
 def _perturbed_obs(y, M, sigma, perturb, rng):
-    Y = np.tile(np.asarray(y, dtype=float).reshape(-1, 1), (1, M))
+    """Observation ensemble Y = y (broadcast), optionally with Gaussian perturbations."""
+    Y = np.tile(np.asarray(y, float).reshape(-1, 1), (1, M))
     if perturb:
-        for ii in range(Y.shape[0]):
-            for jj in range(M):
-                Y[ii, jj] = y[ii] + sigma * _draw_normal(rng)
+        Y = Y + sigma * rng.standard_normal(Y.shape)
     return Y
 
 
 def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measurements_dir,
             gsd=1.3, localization=None, bdepths=None, perturb=True, rng=None):
-    """Run one analysis (filter if single date, smoother otherwise).
-
-    Returns (AnalysisResult, RestartPayload). Writing files is a separate step.
-    """
-    if rng is None:
-        rng = np.random
+    """Run one analysis (a single-date window is the filter). Returns (AnalysisResult, RestartPayload)."""
+    rng = rng if rng is not None else np.random.default_rng()
     loc = {**DEFAULT_LOCALIZATION, **(localization or {})}
     bdepths = list(bdepths or DEFAULT_BDEPTHS)
     depb = layer_depths_from_bdepths(bdepths)
@@ -72,33 +56,25 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
     bnlev = box_levels()
     centers = load_box_centers(geometry_path)
 
-    # --- observations (per date), time-checked and stacked ---
+    # observations (per date), time-checked and stacked
     batches, times = [], []
     for d in dates:
-        b = aggregate_observations(f'{measurements_dir}/{d}.dat', geometry_path, bdepths,
-                                   expected_time=float(d), time_tol=TIME_TOL)
-        batches.append(b)
+        batches.append(aggregate_observations(f'{measurements_dir}/{d}.dat', geometry_path,
+                                              bdepths, expected_time=float(d), time_tol=TIME_TOL))
         times.append(float(d))
     nobs_per_date = [b['values'].shape[0] for b in batches]
     values = np.vstack([b['values'] for b in batches])
-    brefnum = np.vstack([b['brefnum'] for b in batches])
-    breflev = np.vstack([b['breflev'] for b in batches])
+    brefnum = np.vstack([b['brefnum'] for b in batches]).ravel()
+    breflev = np.vstack([b['breflev'] for b in batches]).ravel()
     y = np.log(values).ravel()
 
-    # --- validate coordinates against the domain BEFORE building any layout ---
-    validate_observation_coords(brefnum.ravel(), breflev.ravel(), bnlev)
-
-    if window.is_filter:
-        layout = build_layout_single(bnlev)
-        write_index = layout.Lind
-    else:
-        layout = build_layout_window(bnlev, brefnum.ravel(), breflev.ravel(), nobs_per_date)
-        write_index = layout.lind_extract
-    obs_idx = observation_indices(brefnum.ravel(), breflev.ravel(), layout)
+    validate_observation_coords(brefnum, breflev, bnlev)      # before building the layout
+    layout = build_layout(bnlev, brefnum, breflev, nobs_per_date)
+    obs_idx = observation_indices(brefnum, breflev, layout)
     anl0 = layout.anl_ind_start
     Iind, Jind, Tind = layout.Iind, layout.Jind, layout.Tind
 
-    # --- ensemble background (log) + per-member restart metadata, with time checks ---
+    # ensemble background (log) + per-member restart metadata (analysis date), with time checks
     Xf = np.zeros((layout.n_state, M), dtype=float)
     metas = [None] * M
     for i, member in enumerate(members):
@@ -107,50 +83,38 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
             arr, header, footer, sed = read_poseidon(str(ctx.date_dir(d) / member / 'lastconc.xls'), bnlev)
             ptime = extract_physical_time(footer)
             if ptime is not None and abs(ptime - float(d)) > TIME_TOL:
-                raise ValueError(
-                    f'member {member}: forecast state for requested date {d} has physical time {ptime}')
+                raise ValueError(f'member {member}: state for date {d} has physical time {ptime}')
             per_date[k] = arr
             if k == len(dates) - 1:
                 metas[i] = (header, footer, sed)
         for L in range(layout.n_state):
-            t = 0 if Tind is None else int(Tind[L])
-            Xf[L, i] = per_date[t][int(Iind[L]), int(Jind[L])]
+            Xf[L, i] = per_date[int(Tind[L])][int(Iind[L]), int(Jind[L])]
     Xf = np.log(Xf)
 
-    # --- covariance + localization + analysis ---
-    CC = estimate_covariance(Xf)
-    B, _ = localize_covariance(
-        CC, Iind, Jind, centers, depb, loc['exclude'], loc['horizontal_m'], loc['vertical_m'],
-        Tind=Tind, obstimes=times, RcorT=loc['temporal_years'])
+    # covariance -> localization -> analysis
+    B, _ = localize_covariance(estimate_covariance(Xf), Iind, Jind, centers, depb,
+                               loc['exclude'], loc['horizontal_m'], loc['vertical_m'],
+                               Tind=Tind, obstimes=times, RcorT=loc['temporal_years'])
     R = sigma ** 2 * np.eye(values.shape[0])
-    Y = _perturbed_obs(y, M, sigma, perturb, rng)
-    sol = analysis_update(B, obs_idx, Y, R, Xf)
-
-    # --- physical coordinates of every state row and observation ---
-    box_id = np.array([int(Iind[L]) + 1 for L in range(layout.n_state)], dtype=int)
-    layer_id = np.array([int(Jind[L]) + 1 for L in range(layout.n_state)], dtype=int)
-    state_time = np.array([times[0 if Tind is None else int(Tind[L])] for L in range(layout.n_state)], dtype=float)
-    obs_time = np.concatenate([np.full(n, t) for n, t in zip(nobs_per_date, times)])
+    sol = analysis_update(B, obs_idx, _perturbed_obs(y, M, sigma, perturb, rng), R, Xf)
 
     result = AnalysisResult(
-        target=target, member_ids=list(members), obs_indices=obs_idx, observations=y,
-        log_states=sol, concentrations=np.exp(sol),
-        geometric_mean=np.exp(np.mean(sol, axis=1)), arithmetic_mean=np.mean(np.exp(sol), axis=1),
-        box_id=box_id, layer_id=layer_id, time=state_time,
-        obs_box_id=brefnum.ravel().astype(int), obs_layer_id=breflev.ravel().astype(int), obs_time=obs_time,
+        target=target, member_ids=list(members), obs_indices=obs_idx, observations=y, log_states=sol,
+        box_id=(Iind + 1).astype(int), layer_id=(Jind + 1).astype(int),
+        time=np.array([times[t] for t in Tind], float),
+        obs_box_id=brefnum.astype(int), obs_layer_id=breflev.astype(int),
+        obs_time=np.concatenate([np.full(n, t) for n, t in zip(nobs_per_date, times)]),
         diagnostics={'Nobs': int(values.shape[0]), 'Nstate': int(layout.n_state), 'Nens': M,
-                     'anl_ind_start': int(anl0), 'nobs_per_date': nobs_per_date,
-                     'perturb': bool(perturb)},
+                     'anl_ind_start': int(anl0), 'nobs_per_date': nobs_per_date, 'perturb': bool(perturb)},
     )
-    payload = RestartPayload(bnlev=bnlev, write_index=write_index, anl_ind_start=anl0,
+    payload = RestartPayload(bnlev=bnlev, write_index=layout.lind_extract, anl_ind_start=anl0,
                              members=list(members), metas=metas, batches=batches, dates=dates)
     return result, payload
 
 
 def write_restarts(result: AnalysisResult, payload: RestartPayload, ctx: RunContext) -> list:
     """Write each member's analysed Initconc.dat into the templates directory."""
-    anl0 = payload.anl_ind_start
-    sol = result.log_states
+    sol, anl0 = result.log_states, payload.anl_ind_start
     written = []
     for i, member in enumerate(payload.members):
         header, footer, sed = payload.metas[i]
@@ -164,13 +128,33 @@ def write_restarts(result: AnalysisResult, payload: RestartPayload, ctx: RunCont
 def write_outputs(result: AnalysisResult, payload: RestartPayload, ctx: RunContext) -> None:
     """Write out_<date>.xlsx: obs sheet(s), one sheet per member, and Ens (geometric mean)."""
     for d, batch in zip(payload.dates, payload.batches):
-        xlswrite(str(ctx.output_xlsx(d)),
-                 np.concatenate((batch['values'], batch['brefnum']), axis=1), 'obs')
-    obs_idx = result.obs_indices
-    anl0 = payload.anl_ind_start
-    n_last = payload.batches[-1]['values'].shape[0]
-    sl = slice(anl0, anl0 + n_last)
+        xlswrite(str(ctx.output_xlsx(d)), np.concatenate((batch['values'], batch['brefnum']), axis=1), 'obs')
+    obs_idx, anl0 = result.obs_indices, payload.anl_ind_start
+    sl = slice(anl0, anl0 + payload.batches[-1]['values'].shape[0])
     for i, member in enumerate(payload.members):
-        xlswrite(str(ctx.output_xlsx(result.target)),
-                 np.exp(result.log_states[obs_idx, i])[sl].reshape(-1, 1), member)
+        xlswrite(str(ctx.output_xlsx(result.target)), np.exp(result.log_states[obs_idx, i])[sl].reshape(-1, 1), member)
     xlswrite(str(ctx.output_xlsx(result.target)), result.geometric_mean[obs_idx][sl].reshape(-1, 1), 'Ens')
+
+
+def write_forecast_diagnostics(config, ctx: RunContext, date, bnlev=None):
+    """Compare the ensemble forecast at `date` against observations (no assimilation).
+
+    Writes out_<date>.xlsx with an obs sheet, one sim column per member, and the
+    arithmetic ensemble mean. Shared by the `diagnose` command and the cycle.
+    """
+    if bnlev is None:
+        bnlev = box_levels()
+    batch = aggregate_observations(str(config.measurements_dir / f'{date}.dat'), str(config.geometry),
+                                   config.bdepths, expected_time=float(date))
+    obs, brn, brl = batch['values'], batch['brefnum'], batch['breflev']
+    members = find_members(ctx.date_dir(date))
+    No = obs.shape[0]
+    ens = np.zeros((No, 1))
+    xlswrite(str(ctx.output_xlsx(date)), np.concatenate((obs, brn), axis=1), 'obs')
+    for m in members:
+        arr, _, _, _ = read_poseidon(str(ctx.date_dir(date) / m / 'lastconc.xls'), bnlev)
+        sim = np.array([[arr[int(brn[L, 0]) - 1, int(brl[L, 0]) - 1]] for L in range(No)])
+        ens += sim
+        xlswrite(str(ctx.output_xlsx(date)), sim, m)
+    xlswrite(str(ctx.output_xlsx(date)), ens / np.single(len(members)), 'arithmetic_mean')
+    return obs, members

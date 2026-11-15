@@ -16,8 +16,6 @@ import numpy as np
 from . import workflow
 from .domain import AnalysisWindow, RunResult
 from .geometry import box_levels
-from .observations import aggregate_observations
-from .poseidon_io import read_poseidon, xlswrite
 from .results import write_manifest
 from .runner import (RunContext, copy_lastconc_to_initconc, find_members,
                      publish_initconc, run_poseidon_all)
@@ -60,22 +58,6 @@ def _default_model_runner(config):
         run_poseidon_all(date_dir, expected_time=expected_time, bnlev=bnlev,
                          exe_path=config.model_executable, launcher=config.launcher)
     return runner
-
-
-def _diagnose(config, ctx, date, bnlev):
-    batch = aggregate_observations(str(config.measurements_dir / f'{date}.dat'),
-                                   str(config.geometry), config.bdepths, expected_time=float(date))
-    obs, brn, brl = batch['values'], batch['brefnum'], batch['breflev']
-    members = find_members(ctx.date_dir(date))
-    No = obs.shape[0]
-    ens = np.zeros((No, 1))
-    xlswrite(str(ctx.output_xlsx(date)), np.concatenate((obs, brn), axis=1), 'obs')
-    for m in members:
-        arr, _, _, _ = read_poseidon(str(ctx.date_dir(date) / m / 'lastconc.xls'), bnlev)
-        sim = np.array([[arr[int(brn[L, 0]) - 1, int(brl[L, 0]) - 1]] for L in range(No)])
-        ens += sim
-        xlswrite(str(ctx.output_xlsx(date)), sim, m)
-    xlswrite(str(ctx.output_xlsx(date)), ens / np.single(len(members)), 'arithmetic_mean')
 
 
 def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
@@ -124,7 +106,7 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
                              'status': 'ok', 'provenance': step.provenance})
         elif step.kind == 'diagnose':
             if step.provenance.get('observations'):
-                _diagnose(config, ctx, step.date, bnlev)
+                workflow.write_forecast_diagnostics(config, ctx, step.date, bnlev)
                 executed.append({'step': 'diagnose', 'date': step.date, 'status': 'ok',
                                  'provenance': step.provenance})
             else:

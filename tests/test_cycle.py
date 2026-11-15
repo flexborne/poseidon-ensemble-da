@@ -11,7 +11,7 @@ from poseidon_da.cycle import plan_cycle, run_cycle
 from poseidon_da.geometry import box_levels
 from poseidon_da.poseidon_io import read_poseidon, write_poseidon
 from poseidon_da.runner import find_members
-from poseidon_da.state import build_layout_single
+from poseidon_da.state import build_layout
 
 requires_data = pytest.mark.skipif(not HAS_DATA, reason='experiment archive not present')
 
@@ -55,7 +55,7 @@ def _mock_model_runner():
     """Simulate POSEIDON: turn each member's Initconc.dat into a lastconc.xls stamped
     with the forecast's physical time."""
     bnlev = box_levels()
-    layout = build_layout_single(bnlev)
+    layout = build_layout(bnlev)
 
     def runner(date_dir, expected_time, _bnlev):
         for m in find_members(date_dir):
@@ -63,11 +63,11 @@ def _mock_model_runner():
             arr, header, footer, sed = read_poseidon(str(init), bnlev)
             vect = np.zeros(layout.n_state)
             for L in range(layout.n_state):
-                vect[layout.Lind[int(layout.Iind[L]), int(layout.Jind[L])] - 1] = \
+                vect[layout.lind_extract[int(layout.Iind[L]), int(layout.Jind[L])] - 1] = \
                     arr[int(layout.Iind[L]), int(layout.Jind[L])]
             newfooter = [it for it in footer if len(it['tline'].split()) != 1]
             newfooter.append({'tline': f'   {expected_time:.11f}     '})
-            write_poseidon(str(date_dir / m / 'lastconc.xls'), vect, layout.Lind,
+            write_poseidon(str(date_dir / m / 'lastconc.xls'), vect, layout.lind_extract,
                            bnlev, header, newfooter, sed)
     return runner
 

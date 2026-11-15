@@ -8,6 +8,12 @@ from pathlib import Path
 
 SUPPORTED_SCHEMA = 1
 
+# Single source of truth for analysis defaults.
+DEFAULT_GSD = 1.3
+DEFAULT_BDEPTHS = [25, 100, 500, 2000]
+DEFAULT_LOCALIZATION = {'horizontal_m': 100000.0, 'vertical_m': 100.0,
+                        'temporal_years': 1.0, 'exclude': [1, 2, 3, 49, 50]}
+
 
 @dataclass
 class Config:
@@ -18,9 +24,9 @@ class Config:
     runs_root: Path
     target_time: str
     observation_times: list
-    gsd: float = 1.3
-    bdepths: list = field(default_factory=lambda: [25, 100, 500, 2000])
-    localization: dict = field(default_factory=dict)
+    gsd: float = DEFAULT_GSD
+    bdepths: list = field(default_factory=lambda: list(DEFAULT_BDEPTHS))
+    localization: dict = field(default_factory=lambda: dict(DEFAULT_LOCALIZATION))
     model_executable: Path | None = None
     launcher: list = field(default_factory=list)
     schema_version: int = 1
@@ -57,9 +63,9 @@ def load_config(path) -> Config:
         runs_root=_resolve(base, dataset.get('runs_root', '.')),
         target_time=target,
         observation_times=times,
-        gsd=float(analysis.get('gsd', 1.3)),
-        bdepths=list(analysis.get('bdepths', [25, 100, 500, 2000])),
-        localization=dict(raw.get('localization', {})),
+        gsd=float(analysis.get('gsd', DEFAULT_GSD)),
+        bdepths=list(analysis.get('bdepths', DEFAULT_BDEPTHS)),
+        localization={**DEFAULT_LOCALIZATION, **raw.get('localization', {})},
         model_executable=_resolve(base, exe) if exe else None,
         launcher=list(model.get('launcher', [])),
         schema_version=int(raw.get('case', {}).get('schema_version', 1)),

@@ -6,7 +6,7 @@ import pytest
 
 from poseidon_da.analysis import analysis_update
 from poseidon_da.geometry import box_levels
-from poseidon_da.state import build_layout_single, observation_indices
+from poseidon_da.state import build_layout, observation_indices
 
 
 def _spd(n, seed):
@@ -58,7 +58,7 @@ def test_full_equals_reduced_window():
 
 
 def test_observation_indices_rejects_nonexistent_layer():
-    layout = build_layout_single(box_levels())
+    layout = build_layout(box_levels())
     with pytest.raises(ValueError):
         observation_indices([1], [2], layout)       # box 1 has a single level
     idx = observation_indices([1], [1], layout)

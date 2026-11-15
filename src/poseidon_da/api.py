@@ -27,10 +27,6 @@ def _window(config: Config) -> AnalysisWindow:
                           observation_times=tuple(config.observation_times))
 
 
-def _effective_localization(config: Config) -> dict:
-    return {**workflow.DEFAULT_LOCALIZATION, **config.localization}
-
-
 def _rng(seed, rng):
     if rng is not None:
         return rng
@@ -84,7 +80,7 @@ def run(config: Config, output_dir, *, perturb=True, rng=None, seed=None, force=
         export_result(result, staging)
         steps.append({'step': 'export', 'status': 'ok'})
         manifest = build_manifest(config, result, __version__, steps,
-                                  localization_used=_effective_localization(config),
+                                  localization_used=config.localization,
                                   perturb=perturb, seed=seed)
         write_manifest(manifest, staging)
 

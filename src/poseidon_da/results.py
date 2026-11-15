@@ -8,7 +8,6 @@ from pathlib import Path
 import numpy as np
 
 from .domain import AnalysisResult
-from .poseidon_io import xlswrite
 
 
 def _checksum(path: Path) -> str:
@@ -47,13 +46,7 @@ def export_result(result: AnalysisResult, output_dir) -> dict:
                  'means': ['geometric_mean', 'arithmetic_mean']},
     }
     (out / 'result.json').write_text(json.dumps(summary, indent=2))
-
-    report = out / 'report.xlsx'
-    xlswrite(str(report), result.geometric_mean.reshape(-1, 1), 'geometric_mean')
-    xlswrite(str(report), result.arithmetic_mean.reshape(-1, 1), 'arithmetic_mean')
-    xlswrite(str(report), result.observations.reshape(-1, 1), 'observations')
-
-    return {'npz': npz, 'json': out / 'result.json', 'xlsx': report}
+    return {'npz': npz, 'json': out / 'result.json'}
 
 
 def build_manifest(config, result: AnalysisResult, package_version: str, steps,

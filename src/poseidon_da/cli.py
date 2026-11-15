@@ -5,8 +5,6 @@ import argparse
 import sys
 from pathlib import Path
 
-import numpy as np
-
 from . import __version__, api
 from .config import load_config, validate
 
@@ -61,35 +59,15 @@ def _cmd_run(args):
 
 
 def _cmd_diagnose(args):
+    from .runner import RunContext
+    from .workflow import write_forecast_diagnostics
     config = load_config(args.case)
     if _report_problems(config):
         return 1
     out = Path(args.output) if args.output else _default_output(config, 'diagnose')
-    out.mkdir(parents=True, exist_ok=True)
-
-    from .geometry import box_levels
-    from .observations import aggregate_observations
-    from .poseidon_io import read_poseidon, xlswrite
-    from .runner import find_members
-
-    batch = aggregate_observations(str(config.measurements_dir / f'{config.target_time}.dat'),
-                                   str(config.geometry), config.bdepths,
-                                   expected_time=float(config.target_time))
-    obs, brefnum, breflev = batch['values'], batch['brefnum'], batch['breflev']
-    bnlev = box_levels()
-    members = find_members(config.runs_root / config.target_time)
-    No = obs.shape[0]
-    ens = np.zeros((No, 1))
-    report = out / 'diagnose.xlsx'
-    xlswrite(str(report), np.concatenate((obs, brefnum), axis=1), 'obs')
-    for m in members:
-        arr, _, _, _ = read_poseidon(str(config.runs_root / config.target_time / m / 'lastconc.xls'), bnlev)
-        sim = np.array([[arr[int(brefnum[L, 0]) - 1, int(breflev[L, 0]) - 1]] for L in range(No)])
-        ens += sim
-        xlswrite(str(report), sim, m)
-    ens /= np.single(len(members))            # arithmetic ensemble mean of concentrations
-    xlswrite(str(report), ens, 'arithmetic_mean')
-    print(f'diagnose {config.case_id}: {No} observations, {len(members)} members -> {report}')
+    ctx = RunContext.isolated(out, runs_root=config.runs_root)
+    obs, members = write_forecast_diagnostics(config, ctx, config.target_time)
+    print(f'diagnose {config.case_id}: {obs.shape[0]} observations, {len(members)} members -> {out}')
     return 0
 
 

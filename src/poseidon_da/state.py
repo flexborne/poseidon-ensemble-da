@@ -9,7 +9,7 @@ from .domain import StateLayout
 def validate_observation_coords(brefnum, breflev, bnlev) -> None:
     """Reject observations whose (box, level) is not an existing physical coordinate.
 
-    Checked against the domain (bnlev) BEFORE any layout is built, so a non-existent
+    Checked against the domain (bnlev) BEFORE the layout is built, so a non-existent
     coordinate can never be materialized and later mistaken for a valid one.
     """
     brefnum = np.asarray(brefnum).ravel()
@@ -26,97 +26,61 @@ def validate_observation_coords(brefnum, breflev, bnlev) -> None:
             raise ValueError(f'observation {i}: level {lev} does not exist in box {b} (has {int(bnlev[b])})')
 
 
-def build_layout_single(bnlev) -> StateLayout:
-    """Layout for a single date: one state component per (box, active level)."""
-    Nb = len(bnlev) - 1
-    MaxLev = int(np.max(bnlev))
-    Lind = np.zeros((Nb, MaxLev), dtype=int)
-    Iind, Jind = [], []
-    LL = 0
-    for i in range(1, Nb + 1):
-        for j in range(1, int(bnlev[i]) + 1):
-            LL += 1
-            Lind[i - 1, j - 1] = LL
-            Iind.append(i - 1)
-            Jind.append(j - 1)
-    return StateLayout(Lind=Lind, Iind=np.array(Iind, dtype=int),
-                       Jind=np.array(Jind, dtype=int), n_state=LL)
+def build_layout(bnlev, brefnum=None, breflev=None, nobs_per_date=None) -> StateLayout:
+    """State-vector layout for an analysis window (a single date is a one-date window).
 
-
-def build_layout_window(bnlev, brefnum, breflev, nobs_per_date) -> StateLayout:
-    """Layout for a window: observed boxes on earlier dates + full grid on the target date.
-
-    The target-date block starts at anl_ind_start (0-based). lind_extract maps the
-    target-date (box, level) grid to a 1-based index into that block for writing a restart.
+    The state holds the observed boxes on the earlier dates, then the full box grid on
+    the analysis (last) date. With no observation arguments it is a single-date layout
+    (the full grid only). lind_extract maps the analysis-date grid to a 1-based index
+    for writing a restart.
     """
-    brefnum = np.asarray(brefnum).ravel()
-    breflev = np.asarray(breflev).ravel()
-    Nb = len(bnlev) - 1
-    MaxLev = int(np.max(bnlev))
-    Ndates = len(nobs_per_date)
+    brefnum = np.asarray(brefnum).ravel() if brefnum is not None else np.empty(0, int)
+    breflev = np.asarray(breflev).ravel() if breflev is not None else np.empty(0, int)
+    nobs_per_date = list(nobs_per_date) if nobs_per_date else [0]
+    Nb, MaxLev, Ndates = len(bnlev) - 1, int(np.max(bnlev)), len(nobs_per_date)
 
     Lind = np.zeros((Nb, MaxLev, Ndates), dtype=int)
     Iind, Jind, Tind = [], [], []
-    LL = 0
-    offset = 0
-    for k in range(Ndates - 1):
+    LL = offset = 0
+    for k in range(Ndates - 1):                         # earlier-date observed boxes
         for j in range(int(nobs_per_date[k])):
             LL += 1
-            idx = offset + j
-            box = int(brefnum[idx]) - 1
-            lev = int(breflev[idx]) - 1
+            box, lev = int(brefnum[offset + j]) - 1, int(breflev[offset + j]) - 1
             Lind[box, lev, k] = LL
-            Iind.append(box)
-            Jind.append(lev)
-            Tind.append(k)
+            Iind.append(box); Jind.append(lev); Tind.append(k)
         offset += int(nobs_per_date[k])
 
     anl_ind_start = LL
     lind_extract = np.zeros((Nb, MaxLev), dtype=int)
     LLL = 0
-    for i in range(1, Nb + 1):
+    for i in range(1, Nb + 1):                           # full grid on the analysis date
         for j in range(1, int(bnlev[i]) + 1):
-            LL += 1
-            LLL += 1
+            LL += 1; LLL += 1
             Lind[i - 1, j - 1, Ndates - 1] = LL
-            Iind.append(i - 1)
-            Jind.append(j - 1)
-            Tind.append(Ndates - 1)
+            Iind.append(i - 1); Jind.append(j - 1); Tind.append(Ndates - 1)
             lind_extract[i - 1, j - 1] = LLL
 
     return StateLayout(
-        Lind=Lind, Iind=np.array(Iind, dtype=int), Jind=np.array(Jind, dtype=int),
-        n_state=LL, Tind=np.array(Tind, dtype=int), lind_extract=lind_extract,
+        Lind=Lind, Iind=np.array(Iind, int), Jind=np.array(Jind, int),
+        Tind=np.array(Tind, int), lind_extract=lind_extract, n_state=LL,
         anl_ind_start=anl_ind_start,
     )
 
 
 def observation_indices(brefnum, breflev, layout: StateLayout) -> np.ndarray:
-    """0-based state rows observed by H; validates box/level (and date) existence.
+    """0-based state rows observed by H (a pure gather over the validated layout).
 
-    Raises ValueError on any observation that points at a non-existent state
-    component, instead of silently wrapping to another valid index.
+    Returns the index of each observation's state component; raises if an observation
+    maps to a non-existent component (Lind == 0), so a bad input cannot silently wrap.
     """
     brefnum = np.asarray(brefnum).ravel()
     breflev = np.asarray(breflev).ravel()
-    Lind = layout.Lind
-    Tind = layout.Tind
-    nb, ml = Lind.shape[0], Lind.shape[1]
+    Lind, Tind = layout.Lind, layout.Tind
     idx = np.empty(brefnum.size, dtype=int)
     for i in range(brefnum.size):
-        b, lev = int(brefnum[i]), int(breflev[i])
-        if not (1 <= b <= nb):
-            raise ValueError(f'observation {i}: box {b} out of range 1..{nb}')
-        if not (1 <= lev <= ml):
-            raise ValueError(f'observation {i}: level {lev} out of range 1..{ml}')
-        if Tind is None:
-            val = int(Lind[b - 1, lev - 1])
-            where = f'box {b}, level {lev}'
-        else:
-            t = int(Tind[i])
-            val = int(Lind[b - 1, lev - 1, t])
-            where = f'box {b}, level {lev}, date index {t}'
+        val = int(Lind[int(brefnum[i]) - 1, int(breflev[i]) - 1, int(Tind[i])])
         if val < 1:
-            raise ValueError(f'observation {i}: no state component for {where}')
+            raise ValueError(f'observation {i}: no state component for box {int(brefnum[i])}, '
+                             f'level {int(breflev[i])}, date index {int(Tind[i])}')
         idx[i] = val - 1
     return idx
