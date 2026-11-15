@@ -63,7 +63,7 @@ def build_layout(bnlev, brefnum=None, breflev=None, nobs_per_date=None) -> State
     return StateLayout(
         Lind=Lind, Iind=np.array(Iind, int), Jind=np.array(Jind, int),
         Tind=np.array(Tind, int), lind_extract=lind_extract, n_state=LL,
-        anl_ind_start=anl_ind_start,
+        anl_ind_start=anl_ind_start, nobs_per_date=tuple(int(n) for n in nobs_per_date),
     )
 
 

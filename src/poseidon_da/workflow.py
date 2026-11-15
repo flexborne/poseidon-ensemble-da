@@ -26,6 +26,7 @@ class RestartPayload:
     bnlev: np.ndarray
     write_index: np.ndarray
     anl_ind_start: int
+    target_obs_slice: slice    # rows of the stacked obs arrays for the analysis date
     members: list
     metas: list                # per member: (header, footer, sed)
     batches: list
@@ -107,6 +108,7 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
                      'anl_ind_start': int(anl0), 'nobs_per_date': nobs_per_date, 'perturb': bool(perturb)},
     )
     payload = RestartPayload(bnlev=bnlev, write_index=layout.lind_extract, anl_ind_start=anl0,
+                             target_obs_slice=layout.target_obs_slice,
                              members=list(members), metas=metas, batches=batches, dates=dates)
     return result, payload
 
@@ -128,8 +130,7 @@ def write_outputs(result: AnalysisResult, payload: RestartPayload, ctx: RunConte
     """Write out_<date>.xlsx: obs sheet(s), one sheet per member, and Ens (geometric mean)."""
     for d, batch in zip(payload.dates, payload.batches):
         xlswrite(str(ctx.output_xlsx(d)), np.concatenate((batch['values'], batch['brefnum']), axis=1), 'obs')
-    obs_idx, anl0 = result.obs_indices, payload.anl_ind_start
-    sl = slice(anl0, anl0 + payload.batches[-1]['values'].shape[0])
+    obs_idx, sl = result.obs_indices, payload.target_obs_slice   # explicit observation-space slice
     for i, member in enumerate(payload.members):
         xlswrite(str(ctx.output_xlsx(result.target)), np.exp(result.log_states[obs_idx, i])[sl].reshape(-1, 1), member)
     xlswrite(str(ctx.output_xlsx(result.target)), result.geometric_mean[obs_idx][sl].reshape(-1, 1), 'Ens')

@@ -16,6 +16,8 @@ class StateLayout:
     are 0-based box/level per state component; Tind is the 0-based date index.
     lind_extract maps the analysis-date grid to a 1-based index for writing a restart;
     anl_ind_start is the 0-based offset of the analysis-date block (0 for a single date).
+    nobs_per_date keeps the observation counts so the state-space and observation-space
+    index ranges are derived explicitly, not from a shared offset.
     """
 
     Lind: np.ndarray
@@ -25,6 +27,22 @@ class StateLayout:
     lind_extract: np.ndarray
     n_state: int
     anl_ind_start: int = 0
+    nobs_per_date: tuple = ()
+
+    @property
+    def n_obs(self) -> int:
+        return int(sum(self.nobs_per_date))
+
+    @property
+    def target_obs_slice(self) -> slice:
+        """Rows of the stacked observation arrays belonging to the analysis (last) date."""
+        prior = int(sum(self.nobs_per_date[:-1]))
+        return slice(prior, self.n_obs)
+
+    @property
+    def target_state_slice(self) -> slice:
+        """Rows of the state vector holding the full grid on the analysis (last) date."""
+        return slice(self.anl_ind_start, self.n_state)
 
 
 @dataclass(frozen=True)
