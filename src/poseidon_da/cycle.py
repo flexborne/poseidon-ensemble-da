@@ -9,7 +9,6 @@ window degenerates to the filter), then forecasts far enough ahead to feed the n
 """
 from __future__ import annotations
 
-import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,7 +18,7 @@ import numpy as np
 from . import workflow
 from .domain import AnalysisWindow, RunResult
 from .geometry import box_levels
-from .config import protected_inputs
+from .config import protected_inputs, validate_parameters
 from .publish import assert_safe_dest, staged_publish
 from .results import build_manifest, export_result, write_manifest
 from .runner import (RunContext, copy_lastconc_to_initconc, find_members,
@@ -118,25 +117,27 @@ def _plan_smoother(dates, measurements_dir, window_years) -> list:
 
 def _default_model_runner(config, members):
     def runner(date_dir, expected_time, bnlev):
-        run_poseidon_all(date_dir, members=members, expected_members=members,
-                         expected_time=expected_time, bnlev=bnlev,
+        run_poseidon_all(date_dir, members=members, expected_time=expected_time, bnlev=bnlev,
                          exe_path=config.model_executable, launcher=config.launcher,
                          use_pty=config.use_pty)
     return runner
 
 
-def _validate_date_path(d, runs_root: Path) -> None:
-    """A cycle date must be a finite physical time AND a safe single path component in runs_root."""
+def _cycle_time(d, runs_root: Path) -> float:
+    """Parse a cycle date to a finite physical time and confirm it is a direct child of runs_root.
+
+    A non-numeric value (including path separators, '.', '..') fails float(); the resolved-parent
+    check then rejects anything that would escape the dataset root.
+    """
     try:
         t = float(d)
     except (TypeError, ValueError):
         raise ValueError(f'cycle date {d!r} is not numeric')
     if not np.isfinite(t):
         raise ValueError(f'cycle date {d!r} is not a finite physical time')
-    if d in ('', '.', '..') or '/' in d or '\\' in d or os.sep in d:
-        raise ValueError(f'cycle date {d!r} is not a safe path component')
     if (runs_root / d).resolve().parent != runs_root.resolve():
         raise ValueError(f'cycle date {d!r} escapes the dataset root {runs_root}')
+    return t
 
 
 # ---- shared step primitives ----------------------------------------------------
@@ -161,22 +162,27 @@ def _diagnose_at(config, ctx, date, bnlev):
 
 
 def _execute(plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging):
-    """Run one plan: analyse windows, seed + forecast each date, diagnose against observations."""
+    """Run one plan: analyse windows, seed + forecast each date, diagnose against observations.
+
+    Each record gets a sequential `id`, so repeated forecasts of the same date (overlapping
+    smoother windows) are individually identifiable in the manifest.
+    """
     executed = []
-    for step in plan:
+    for i, step in enumerate(plan):
         if step.kind == 'analyze':
-            executed.append(_analyze_at(AnalysisWindow(step.date, step.window),
-                                        config, ctx, perturb, rng, staging, step.provenance))
+            rec = _analyze_at(AnalysisWindow(step.date, step.window),
+                              config, ctx, perturb, rng, staging, step.provenance)
         elif step.kind == 'forecast':
             if step.seed == 'analysis':
                 publish_initconc(ctx.templates_dir, ctx.date_dir(step.date))   # from the analysis restart
             else:
                 copy_lastconc_to_initconc(ctx.date_dir(step.source), ctx.date_dir(step.date), member_set)
             runner(ctx.date_dir(step.date), float(step.date), bnlev)
-            executed.append({'step': 'forecast', 'date': step.date, 'source': step.source,
-                             'status': 'ok', 'provenance': step.provenance})
-        elif step.kind == 'diagnose':
-            executed.append(_diagnose_at(config, ctx, step.date, bnlev))
+            rec = {'step': 'forecast', 'date': step.date, 'source': step.source,
+                   'status': 'ok', 'provenance': step.provenance}
+        else:  # diagnose
+            rec = _diagnose_at(config, ctx, step.date, bnlev)
+        executed.append({'id': i, **rec})
     return executed
 
 
@@ -198,9 +204,10 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
 
     # ---- validate everything before any write ----
     assert_safe_dest(output_dir, protected_inputs(config))          # never overwrite the dataset (R2.1)
-    for d in dates:
-        _validate_date_path(d, runs_root)                           # finite time + safe path component (R2)
-    times = [float(d) for d in dates]
+    problems = validate_parameters(config)                          # shared case/parameter checks
+    if problems:
+        raise ValueError('invalid case:\n  - ' + '\n  - '.join(problems))
+    times = [_cycle_time(d, runs_root) for d in dates]              # finite time + safe path component (R2)
     if any(times[i] >= times[i + 1] for i in range(len(times) - 1)):
         raise ValueError(f'cycle dates must be strictly increasing in physical time (got {dates})')
     plan = plan_cycle(mode, dates, config.measurements_dir, config.cycle_window_years)
@@ -216,6 +223,23 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
             member_set = ms
         elif set(ms) != set(member_set):                            # identical ensemble on every date (R3)
             raise ValueError(f'cycle: member set at {d} differs from {dates[0]}')
+
+    # each analysis window state must either be produced by an earlier forecast or already exist
+    # (a smoother cycle started mid-archive needs its first window's future states prepared)
+    produced = set()
+    for step in plan:
+        if step.kind == 'analyze':
+            for wd in step.window:
+                if wd in produced:
+                    continue
+                for m in member_set:
+                    f = runs_root / wd / m / 'lastconc.xls'
+                    if not f.exists():
+                        raise FileNotFoundError(
+                            f'cycle: analysis {step.date} needs the state for date {wd}, member {m} '
+                            f'({f}); it is neither present nor produced earlier in the plan')
+        elif step.kind == 'forecast':
+            produced.add(step.date)
 
     bnlev = box_levels()
     rng = np.random.default_rng(seed) if seed is not None else None

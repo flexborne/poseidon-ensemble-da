@@ -25,7 +25,7 @@ class RestartPayload:
 
     bnlev: np.ndarray
     write_index: np.ndarray
-    anl_ind_start: int
+    target_state_slice: slice  # rows of the state vector for the analysis-date grid
     target_obs_slice: slice    # rows of the stacked obs arrays for the analysis date
     members: list
     metas: list                # per member: (header, footer, sed)
@@ -92,9 +92,9 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
     Xf = np.log(Xf)
 
     # covariance -> localization -> analysis
-    B, _ = localize_covariance(estimate_covariance(Xf), Iind, Jind, geometry.centers, depb,
-                               loc['exclude'], loc['horizontal_m'], loc['vertical_m'],
-                               Tind=Tind, obstimes=times, RcorT=loc['temporal_years'])
+    B = localize_covariance(estimate_covariance(Xf), Iind, Jind, geometry.centers, depb,
+                            loc['exclude'], loc['horizontal_m'], loc['vertical_m'],
+                            Tind=Tind, obstimes=times, RcorT=loc['temporal_years'])
     R = sigma ** 2 * np.eye(values.shape[0])
     sol = analysis_update(B, obs_idx, _perturbed_obs(y, M, sigma, perturb, rng), R, Xf)
 
@@ -107,7 +107,8 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
         diagnostics={'Nobs': int(values.shape[0]), 'Nstate': int(layout.n_state), 'Nens': M,
                      'anl_ind_start': int(anl0), 'nobs_per_date': nobs_per_date, 'perturb': bool(perturb)},
     )
-    payload = RestartPayload(bnlev=bnlev, write_index=layout.lind_extract, anl_ind_start=anl0,
+    payload = RestartPayload(bnlev=bnlev, write_index=layout.lind_extract,
+                             target_state_slice=layout.target_state_slice,
                              target_obs_slice=layout.target_obs_slice,
                              members=list(members), metas=metas, batches=batches, dates=dates)
     return result, payload
@@ -115,11 +116,11 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
 
 def write_restarts(result: AnalysisResult, payload: RestartPayload, ctx: RunContext) -> list:
     """Write each member's analysed Initconc.dat into the templates directory."""
-    sol, anl0 = result.log_states, payload.anl_ind_start
+    sol, target = result.log_states, payload.target_state_slice
     written = []
     for i, member in enumerate(payload.members):
         header, footer, sed = payload.metas[i]
-        conc = to_concentration(sol[anl0:, i:i + 1], member_ids=[member]).ravel()   # guarded log->physical
+        conc = to_concentration(sol[target, i:i + 1], member_ids=[member]).ravel()   # guarded log->physical
         ofname = ctx.template_dir(member) / 'Initconc.dat'
         write_poseidon(str(ofname), conc, payload.write_index, payload.bnlev, header, footer, sed)
         written.append(ofname)

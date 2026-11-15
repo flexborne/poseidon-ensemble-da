@@ -8,11 +8,11 @@ import numpy as np
 from openpyxl import Workbook, load_workbook
 
 
-def read_poseidon(pfile, bnlev, validate=True):
+def read_poseidon(pfile, bnlev):
     """Read a POSEIDON state file -> (arr[box,level], header, footer, sed[box,2]).
 
-    With validate=True a missing/duplicated box row or a non-positive/non-finite active
-    concentration raises ValueError rather than being silently accepted.
+    A missing/duplicated box row or a non-positive/non-finite active concentration raises
+    ValueError rather than being silently accepted.
     """
     Nbox = len(bnlev) - 1
     MaxLev = int(np.max(bnlev))
@@ -40,7 +40,7 @@ def read_poseidon(pfile, bnlev, validate=True):
             if tok != int(tok) or int(tok) < 1:  # a body row must be a positive integer box id
                 raise ValueError(f'read_poseidon: invalid box id {C[0]!r} in {pfile}')
             nn = int(tok)
-            if validate and nn in seen:
+            if nn in seen:
                 raise ValueError(f'read_poseidon: duplicate row for box {nn} in {pfile}')
             seen.add(nn)
             expected_cols = int(bnlev[nn]) + 3
@@ -48,19 +48,18 @@ def read_poseidon(pfile, bnlev, validate=True):
                 raise ValueError('read_poseidon: number of levels in bnlev is inconsistent with the data file')
             for j in range(1, int(bnlev[nn]) + 1):
                 value = float(C[j])
-                if validate and not (np.isfinite(value) and value > 0.0):
+                if not (np.isfinite(value) and value > 0.0):
                     raise ValueError(f'read_poseidon: non-positive/non-finite concentration for box {nn}, level {j} in {pfile}: {value}')
                 arr[nn - 1, j - 1] = value
             s0, s1 = float(C[j + 1]), float(C[j + 2])
-            if validate and not (np.isfinite(s0) and np.isfinite(s1)):
+            if not (np.isfinite(s0) and np.isfinite(s1)):
                 raise ValueError(f'read_poseidon: non-finite sediment value for box {nn} in {pfile}: {s0}, {s1}')
             sed[nn - 1, 0] = s0
             sed[nn - 1, 1] = s1
 
-    if validate:
-        missing = [b for b in range(1, Nbox + 1) if b not in seen]
-        if missing:
-            raise ValueError(f'read_poseidon: missing box rows {missing} in {pfile}')
+    missing = [b for b in range(1, Nbox + 1) if b not in seen]
+    if missing:
+        raise ValueError(f'read_poseidon: missing box rows {missing} in {pfile}')
     return arr, header, footer, sed
 
 

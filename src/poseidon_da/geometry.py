@@ -40,34 +40,6 @@ def box_levels() -> np.ndarray:
 GEOMETRY_COLUMNS = 11
 
 
-def validate_geometry(geometry_path) -> list:
-    """Problems with the geometry workbook: schema (required columns), box ids, per-box values."""
-    try:
-        AAA = load_numeric_excel(geometry_path, sheet_name='Sheet1')
-    except Exception as exc:
-        return [f'cannot read geometry {geometry_path}: {exc}']
-    problems = []
-    if AAA.shape[1] < GEOMETRY_COLUMNS:
-        return [f'geometry: needs at least {GEOMETRY_COLUMNS} columns (has {AAA.shape[1]})']
-
-    box_rows = AAA[np.isfinite(AAA[:, 0])]
-    ids = box_rows[:, 0]
-    if np.any(ids != ids.astype(int)):
-        problems.append('geometry: non-integer box id(s)')
-    seen, dups = set(), set()
-    for v in ids.astype(int):
-        (dups.add(int(v)) if v in seen else seen.add(int(v)))
-    if dups:
-        problems.append(f'geometry: duplicate box id(s) {sorted(dups)}')
-    if not np.all(np.isfinite(box_rows[:, [4, 5, 6, 7, 8, 9, 10]])):
-        problems.append('geometry: missing lat/lon bounds, level count or centre for some box')
-    else:
-        levels = box_rows[:, 8]
-        if np.any(levels != levels.astype(int)) or np.any(levels < 1):
-            problems.append('geometry: level count (column 8) must be a positive integer for every box')
-    return problems
-
-
 @dataclass(frozen=True)
 class Geometry:
     """Box geometry read once from the workbook: ids, lat/lon bounds, level counts, centres."""
@@ -88,10 +60,27 @@ class Geometry:
 
 
 def load_geometry(geometry_path) -> Geometry:
-    """Read the geometry workbook (Sheet1) once into a Geometry (call validate_geometry first)."""
+    """Read and validate the geometry workbook (Sheet1) in one call -> Geometry, or raise ValueError.
+
+    Checks the required columns, integer and unique box ids, and finite per-box lat/lon bounds,
+    positive-integer level counts and centres — so a reader never meets an unvalidated workbook.
+    """
     rows = load_numeric_excel(geometry_path, sheet_name='Sheet1')
+    if rows.shape[1] < GEOMETRY_COLUMNS:
+        raise ValueError(f'geometry: needs at least {GEOMETRY_COLUMNS} columns (has {rows.shape[1]})')
     rows = rows[np.isfinite(rows[:, 0])]
-    boxnum = rows[:, 0]
+    ids = rows[:, 0]
+    if np.any(ids != ids.astype(int)):
+        raise ValueError('geometry: non-integer box id(s)')
+    if len(set(ids.astype(int))) != len(ids):
+        raise ValueError('geometry: duplicate box id(s)')
+    if not np.all(np.isfinite(rows[:, [4, 5, 6, 7, 8, 9, 10]])):
+        raise ValueError('geometry: missing lat/lon bounds, level count or centre for some box')
+    levels = rows[:, 8]
+    if np.any(levels != levels.astype(int)) or np.any(levels < 1):
+        raise ValueError('geometry: level count (column 8) must be a positive integer for every box')
+
+    boxnum = ids
     centers = {int(boxnum[i]) - 1: (float(rows[i, 9]), float(rows[i, 10])) for i in range(len(boxnum))}
     return Geometry(boxnum=boxnum, boxlats=rows[:, [4, 5]], boxlons=rows[:, [6, 7]],
-                    boxnlev=rows[:, 8].astype(int), centers=centers)
+                    boxnlev=levels.astype(int), centers=centers)

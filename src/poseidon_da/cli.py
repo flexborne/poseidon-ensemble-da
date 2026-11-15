@@ -1,4 +1,8 @@
-"""Command-line interface: validate / analyze / run / diagnose."""
+"""Command-line interface: validate / analyze / run / diagnose / run-cycle.
+
+Thin wrapper: each command loads the case and calls one API operation, which owns validation
+and publication; a ValueError (invalid case, unsafe output) is printed and returns exit 1.
+"""
 from __future__ import annotations
 
 import argparse
@@ -13,18 +17,19 @@ def _default_output(config, sub):
     return Path.cwd() / 'results' / f'{config.case_id}-{sub}'
 
 
-def _report_problems(config):
+def _cmd_validate(args):
+    config = load_config(args.case)
     problems = validate(config)
+    if config.geometry.exists():                       # the only place the command reads geometry content
+        from .geometry import load_geometry
+        try:
+            load_geometry(config.geometry)
+        except Exception as exc:
+            problems.append(str(exc))
     if problems:
         print(f'INVALID: {config.case_id} ({len(problems)} problem(s))')
         for p in problems:
             print(f'  - {p}')
-    return problems
-
-
-def _cmd_validate(args):
-    config = load_config(args.case)
-    if _report_problems(config):
         return 1
     print(f'OK: {config.case_id} is runnable '
           f'(target {config.target_time}, {len(config.observation_times)} observation date(s))')
@@ -33,8 +38,6 @@ def _cmd_validate(args):
 
 def _cmd_analyze(args):
     config = load_config(args.case)
-    if _report_problems(config):
-        return 1
     out = Path(args.output) if args.output else _default_output(config, 'analysis')
     result = api.write_analysis(config, out, perturb=not args.no_perturb, seed=args.seed, force=args.force)
     print(f'analyze {config.case_id}: {result.status}')
@@ -44,8 +47,6 @@ def _cmd_analyze(args):
 
 def _cmd_run(args):
     config = load_config(args.case)
-    if _report_problems(config):
-        return 1
     out = Path(args.output) if args.output else _default_output(config, 'run')
     result = api.run(config, out, perturb=not args.no_perturb, seed=args.seed, force=args.force)
     print(f'run {config.case_id}: {result.status}')
@@ -57,8 +58,6 @@ def _cmd_run(args):
 
 def _cmd_diagnose(args):
     config = load_config(args.case)
-    if _report_problems(config):
-        return 1
     out = Path(args.output) if args.output else _default_output(config, 'diagnose')
     result = api.diagnose(config, out, force=args.force)
     s = result.steps[0]
@@ -80,44 +79,51 @@ def _cmd_run_cycle(args):
     return 0
 
 
+def _add_output(sp, perturb=False):
+    sp.add_argument('--output', '-o', default=None, help='output directory')
+    sp.add_argument('--force', action='store_true', help='overwrite a non-empty output directory')
+    if perturb:
+        sp.add_argument('--no-perturb', action='store_true', help='deterministic (no perturbations)')
+        sp.add_argument('--seed', type=int, default=None, help='RNG seed for perturbations')
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog='poseidon-da', description='POSEIDON ensemble data assimilation')
     p.add_argument('--version', action='version', version=f'poseidon-da {__version__}')
     sub = p.add_subparsers(dest='command', required=True)
 
-    for name, func, needs_output in [
-        ('validate', _cmd_validate, False),
-        ('analyze', _cmd_analyze, True),
-        ('run', _cmd_run, True),
-        ('diagnose', _cmd_diagnose, True),
-    ]:
-        sp = sub.add_parser(name, help=f'{name} a case')
-        sp.add_argument('case', help='path to case.toml')
-        if needs_output:
-            sp.add_argument('--output', '-o', default=None, help='output directory')
-            sp.add_argument('--no-perturb', action='store_true',
-                            help='disable observation perturbations (deterministic)')
-            sp.add_argument('--seed', type=int, default=None, help='RNG seed for perturbations')
-        if name in ('analyze', 'run', 'diagnose'):
-            sp.add_argument('--force', action='store_true', help='overwrite a non-empty output directory')
-        sp.set_defaults(func=func)
+    sv = sub.add_parser('validate', help='check a case and its inputs')
+    sv.add_argument('case', help='path to case.toml')
+    sv.set_defaults(func=_cmd_validate)
 
-    sc = sub.add_parser('run-cycle', help='run a sequential NODA/filter assimilation-forecast cycle')
-    sc.add_argument('case', help='path to case.toml')
-    sc.add_argument('--output', '-o', default=None, help='output directory')
+    sa = sub.add_parser('analyze', help='compute and publish the analysis (NPZ/JSON + manifest)')
+    sa.add_argument('case', help='path to case.toml'); _add_output(sa, perturb=True)
+    sa.set_defaults(func=_cmd_analyze)
+
+    sr = sub.add_parser('run', help='analyze + restarts + outputs + manifest')
+    sr.add_argument('case', help='path to case.toml'); _add_output(sr, perturb=True)
+    sr.set_defaults(func=_cmd_run)
+
+    sd = sub.add_parser('diagnose', help='compare the forecast against observations')
+    sd.add_argument('case', help='path to case.toml'); _add_output(sd)
+    sd.set_defaults(func=_cmd_diagnose)
+
+    sc = sub.add_parser('run-cycle', help='sequential NODA/filter/smoother assimilation-forecast cycle')
+    sc.add_argument('case', help='path to case.toml'); _add_output(sc, perturb=True)
     sc.add_argument('--mode', choices=['noda', 'filter', 'smoother'], default=None,
                     help='cycle mode (default from [cycle] in the config)')
     sc.add_argument('--dates', nargs='+', default=None, help='override the date sequence')
-    sc.add_argument('--no-perturb', action='store_true', help='deterministic (no perturbations)')
-    sc.add_argument('--seed', type=int, default=None, help='RNG seed')
-    sc.add_argument('--force', action='store_true', help='overwrite a non-empty output directory')
     sc.set_defaults(func=_cmd_run_cycle)
     return p
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (ValueError, FileExistsError, FileNotFoundError) as exc:
+        print(f'ERROR: {exc}', file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':

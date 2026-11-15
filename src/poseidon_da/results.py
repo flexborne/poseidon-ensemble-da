@@ -50,7 +50,7 @@ def export_result(result: AnalysisResult, output_dir) -> dict:
 
 
 def build_manifest(config, result, package_version: str, steps, *, localization_used, perturbation,
-                   dates=None, member_order=None, mode=None, window_years=None) -> dict:
+                   dates=None, member_order=None, mode=None, window_years=None, target_time=None) -> dict:
     """One manifest builder for every operation (analyze / run / diagnose / cycle).
 
     Records versions, config, per-step provenance and input checksums (geometry + each date's
@@ -78,7 +78,8 @@ def build_manifest(config, result, package_version: str, steps, *, localization_
         'package_version': package_version,
         'schema_version': config.schema_version,
         'case_id': config.case_id,
-        'target_time': result.target if result is not None else config.target_time,
+        'target_time': target_time if target_time is not None
+        else (result.target if result is not None else config.target_time),
         'mode': mode,
         'dates': dates,
         'window_years': window_years,

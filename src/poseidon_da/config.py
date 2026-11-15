@@ -69,12 +69,15 @@ class Config:
     cycle_mode: str = 'filter'
     cycle_dates: list = field(default_factory=list)
     cycle_window_years: float = 0.25
-    schema_issues: list = field(default_factory=list)   # unknown tables/keys found at load time
 
 
 def protected_inputs(config: Config) -> list:
-    """Input paths that an output directory must never overlap (dataset, measurements, geometry)."""
-    return [config.runs_root, config.measurements_dir, config.geometry]
+    """Input paths an output directory must never overlap (dataset, measurements, geometry,
+    the case file and the model executable)."""
+    paths = [config.runs_root, config.measurements_dir, config.geometry, config.config_path]
+    if config.model_executable is not None:
+        paths.append(config.model_executable)
+    return paths
 
 
 def _resolve(base: Path, value) -> Path:
@@ -87,6 +90,10 @@ def load_config(path) -> Config:
     path = Path(path).resolve()
     with open(path, 'rb') as fh:
         raw = tomllib.load(fh)
+
+    problems = schema_problems(raw)
+    if problems:                                      # reject mistyped keys at load time
+        raise ValueError('invalid case file: ' + '; '.join(problems))
 
     base = path.parent
     dataset = raw.get('dataset', {})
@@ -116,15 +123,65 @@ def load_config(path) -> Config:
         cycle_mode=cycle.get('mode', 'filter'),
         cycle_dates=list(cycle.get('dates', [])),
         cycle_window_years=float(cycle.get('window_years', 0.25)),
-        schema_issues=schema_problems(raw),
     )
 
 
-def validate(config: Config) -> list:
-    """Return a list of human-readable problems; empty means the case is runnable."""
-    problems = list(config.schema_issues)
+def _check_bdepths(bd) -> list:
+    if not bd:
+        return ['analysis.bdepths must be a non-empty list']
+    if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in bd):
+        return ['analysis.bdepths must be finite numbers']
+    if bd[0] <= 0:
+        return [f'analysis.bdepths must start with a positive depth boundary (got {bd[0]})']
+    if any(bd[i] >= bd[i + 1] for i in range(len(bd) - 1)):
+        return [f'analysis.bdepths must be strictly increasing (got {bd})']
+    from .geometry import box_levels
+    need = int(np.max(box_levels()))
+    return [f'analysis.bdepths needs at least {need} entries (got {len(bd)})'] if len(bd) < need else []
+
+
+def _check_date_inputs(config, date) -> list:
+    """Measurement file and ensemble directory for one date exist (cheap stats)."""
+    problems = []
+    if not (config.measurements_dir / f'{date}.dat').exists():
+        problems.append(f'missing measurement file: {config.measurements_dir / f"{date}.dat"}')
+    ddir = config.runs_root / date
+    if not ddir.is_dir():
+        problems.append(f'run directory not found for date {date}: {ddir}')
+    elif not sorted(ddir.glob('*hydrol*dep*')):
+        problems.append(f'no ensemble member folders in {ddir}')
+    return problems
+
+
+def validate_parameters(config: Config) -> list:
+    """Analysis parameters + input existence (cheap; file *content* is checked when read).
+
+    Covers schema version, gsd, localization, bdepths, and that geometry / measurements exist.
+    Shared by the analysis (analyze/run) and the cycle, which both run the Kalman update.
+    """
+    problems = []
     if config.schema_version != SUPPORTED_SCHEMA:
         problems.append(f'unsupported schema_version {config.schema_version} (supported: {SUPPORTED_SCHEMA})')
+    if not (math.isfinite(config.gsd) and config.gsd > 1.0):
+        problems.append(f'analysis.gsd must be a finite value > 1 (got {config.gsd})')
+    loc = config.localization
+    for key in ('horizontal_m', 'vertical_m', 'temporal_years'):
+        if key in loc and not (math.isfinite(loc[key]) and loc[key] > 0):
+            problems.append(f'localization.{key} must be a finite positive value')
+    problems += _check_bdepths(config.bdepths)
+    if not config.geometry.exists():
+        problems.append(f'geometry file not found: {config.geometry}')
+    if not config.measurements_dir.is_dir():
+        problems.append(f'measurements_dir not found: {config.measurements_dir}')
+    return problems
+
+
+def validate(config: Config) -> list:
+    """Full single-window validation (the `validate` command, analyze/run entry); empty = runnable.
+
+    Geometry *content* is validated when load_geometry reads it, not here.
+    """
+    problems = validate_parameters(config)
     if not config.target_time:
         problems.append('analysis.target_time is required')
     if not config.observation_times:
@@ -133,40 +190,20 @@ def validate(config: Config) -> list:
         problems.append('analysis.target_time must be the last of observation_times')
     if len(set(config.observation_times)) != len(config.observation_times):
         problems.append('analysis.observation_times contains duplicates')
-    if not (math.isfinite(config.gsd) and config.gsd > 1.0):
-        problems.append(f'analysis.gsd must be a finite value > 1 (got {config.gsd})')
-    loc = config.localization
-    for key in ('horizontal_m', 'vertical_m', 'temporal_years'):
-        if key in loc and not (math.isfinite(loc[key]) and loc[key] > 0):
-            problems.append(f'localization.{key} must be a finite positive value')
-    bd = config.bdepths
-    if not bd:
-        problems.append('analysis.bdepths must be a non-empty list')
-    elif not all(isinstance(x, (int, float)) and math.isfinite(x) for x in bd):
-        problems.append('analysis.bdepths must be finite numbers')
-    elif bd[0] <= 0:
-        problems.append(f'analysis.bdepths must start with a positive depth boundary (got {bd[0]})')
-    elif any(bd[i] >= bd[i + 1] for i in range(len(bd) - 1)):
-        problems.append(f'analysis.bdepths must be strictly increasing (got {bd})')
-    else:
-        from .geometry import box_levels
-        need = int(np.max(box_levels()))
-        if len(bd) < need:
-            problems.append(f'analysis.bdepths needs at least {need} entries (got {len(bd)})')
+    for d in config.observation_times:
+        problems += _check_date_inputs(config, d)
+    return problems
+
+
+def validate_diagnose(config: Config, date) -> list:
+    """Only what diagnose needs: bdepths, geometry/measurements and the chosen date's inputs."""
+    problems = []
+    if config.schema_version != SUPPORTED_SCHEMA:
+        problems.append(f'unsupported schema_version {config.schema_version} (supported: {SUPPORTED_SCHEMA})')
+    problems += _check_bdepths(config.bdepths)
     if not config.geometry.exists():
         problems.append(f'geometry file not found: {config.geometry}')
-    else:
-        from .geometry import validate_geometry
-        problems += validate_geometry(config.geometry)
     if not config.measurements_dir.is_dir():
         problems.append(f'measurements_dir not found: {config.measurements_dir}')
-    for d in config.observation_times:
-        f = config.measurements_dir / f'{d}.dat'
-        if not f.exists():
-            problems.append(f'missing measurement file: {f}')
-        ddir = config.runs_root / d
-        if not ddir.is_dir():
-            problems.append(f'run directory not found for observation date {d}: {ddir}')
-        elif not sorted(ddir.glob('*hydrol*dep*')):
-            problems.append(f'no ensemble member folders in {ddir}')
+    problems += _check_date_inputs(config, date)
     return problems

@@ -16,7 +16,7 @@ class RunContext:
 
     runs_root: Path       # contains the per-date working directories
     templates_dir: Path   # where updated Initconc.dat files are written
-    outputs_dir: Path     # where out_*.xlsx / obs_pos.xlsx / obs2pos.mat go
+    outputs_dir: Path     # where out_<date>.xlsx go
 
     @classmethod
     def isolated(cls, workdir, runs_root=None) -> "RunContext":
@@ -135,20 +135,29 @@ def run_executable_in_dir(directory, exe_path=None, launcher=None, use_pty=False
     if not exe_path.exists():
         raise FileNotFoundError(f'POSEIDON executable not found: {exe_path}')
     cmd = _executable_command(exe_path, launcher)
+    log_path = directory / 'poseidon.log'
     if use_pty and _pty_supported():               # headless console apps (e.g. wine) need a tty
-        rc = _run_in_pty(cmd, str(directory), log_path=directory / 'poseidon.log')
+        rc = _run_in_pty(cmd, str(directory), log_path=log_path)
     else:
         rc = subprocess.run(cmd, cwd=directory).returncode
     if rc != 0:
-        raise RuntimeError(f'{exe_path.name} failed in {directory} with exit code {rc}')
+        tail = ''
+        try:
+            tail = log_path.read_text(errors='ignore')[-2000:]
+        except OSError:
+            pass
+        detail = f'\n--- model log tail ---\n{tail}' if tail.strip() else ''
+        raise RuntimeError(f'{exe_path.name} failed in {directory} with exit code {rc}{detail}')
 
 
-def run_poseidon_all(date_dir, members=None, expected_members=None, exe_path=None,
+def run_poseidon_all(date_dir, members=None, exe_path=None,
                      launcher=None, expected_time=None, bnlev=None, use_pty=False) -> None:
     """Run POSEIDON in every member folder of a date, verifying a FRESH output.
 
-    Any pre-existing lastconc.xls is deleted first (a stale file can't pass as the forecast);
-    the output must reappear and, when bnlev/expected_time are given, parse and carry that time.
+    `members`, when given, is the exact expected set (missing or extra members are rejected) and
+    fixes the run order; otherwise the folders found are used. Any pre-existing lastconc.xls is
+    deleted first (a stale file can't pass as the forecast); the output must reappear and, when
+    bnlev/expected_time are given, parse and carry that time.
     """
     from .poseidon_io import read_poseidon, read_state
 
@@ -156,16 +165,15 @@ def run_poseidon_all(date_dir, members=None, expected_members=None, exe_path=Non
     if not date_dir.is_dir():
         raise FileNotFoundError(f'run_poseidon_all: date directory does not exist: {date_dir}')
     found = find_members(date_dir)
-    if expected_members is not None:
-        # exact set: reject BOTH missing and extra members, run in the declared order
-        if set(found) != set(expected_members):
-            missing = sorted(set(expected_members) - set(found))
-            extra = sorted(set(found) - set(expected_members))
+    if members is not None:
+        if set(found) != set(members):             # exact set: reject BOTH missing and extra
+            missing = sorted(set(members) - set(found))
+            extra = sorted(set(found) - set(members))
             raise FileNotFoundError(
                 f'run_poseidon_all: member set mismatch in {date_dir}: missing={missing}, extra={extra}')
-        members = list(expected_members)
+        members = list(members)
     else:
-        members = members or found
+        members = found
     if not members:
         raise FileNotFoundError(f'run_poseidon_all: no member folders (*hydrol*dep*) in {date_dir}')
     for name in members:

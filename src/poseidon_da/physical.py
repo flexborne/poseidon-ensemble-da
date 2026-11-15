@@ -25,17 +25,24 @@ def to_concentration(log_states, member_ids=None) -> np.ndarray:
     return conc
 
 
+def _finite(values, what) -> np.ndarray:
+    if not np.all(np.isfinite(values)):
+        row = int(np.argwhere(~np.isfinite(values))[0][0])
+        raise FloatingPointError(f'non-representable {what} at state row {row}: {values[row]}')
+    return values
+
+
 def geometric_mean(log_states) -> np.ndarray:
-    """Per-row geometric mean across members: exp(mean of log-states)."""
-    return np.exp(np.mean(np.asarray(log_states, dtype=float), axis=1))
+    """Per-row geometric mean across members, exp(mean of log-states), guarded for finiteness."""
+    return _finite(np.exp(np.mean(np.asarray(log_states, dtype=float), axis=1)), 'geometric mean')
 
 
 def arithmetic_mean(log_states) -> np.ndarray:
-    """Per-row arithmetic mean of concentrations across members, computed overflow-safely.
+    """Per-row arithmetic mean of concentrations across members, overflow-safe and guarded.
 
     mean(exp(x)) == exp(m) * mean(exp(x - m)) with m = row max, so a row of large log-values
     no longer overflows an intermediate sum before the division.
     """
     x = np.asarray(log_states, dtype=float)
     m = x.max(axis=1, keepdims=True)
-    return (np.exp(m).ravel()) * np.mean(np.exp(x - m), axis=1)
+    return _finite(np.exp(m).ravel() * np.mean(np.exp(x - m), axis=1), 'arithmetic mean')

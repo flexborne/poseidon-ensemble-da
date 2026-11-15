@@ -26,17 +26,15 @@ def localize_covariance(CC, Iind, Jind, centers, layer_depths, exclude, RcorH, R
 
     Damping is exp(-DistH/RcorH) * exp(-DistV/RcorV) [* exp(-DistT/RcorT)]. layer_depths
     are the representative depths used for the vertical distance. Boxes in `exclude`
-    (1-based ids) are decoupled from all others. Returns (B, LocM).
+    (1-based ids) are decoupled from all others. Returns the localized covariance B.
     """
     exclude = set(int(x) for x in exclude)
     N = CC.shape[0]
-    LocM = np.ones((N, N), dtype=float)
     B = np.array(CC, dtype=float, copy=True)
     for ii in range(N):
         for jj in range(ii + 1, N):
             box1, box2 = int(Iind[ii]), int(Iind[jj])
             if (box1 + 1) in exclude or (box2 + 1) in exclude:
-                LocM[ii, jj] = LocM[jj, ii] = 0.0
                 B[ii, jj] = B[jj, ii] = 0.0
                 continue
             lat1, lon1 = centers[box1]
@@ -47,6 +45,5 @@ def localize_covariance(CC, Iind, Jind, centers, layer_depths, exclude, RcorH, R
             if Tind is not None:
                 DistT = abs(float(obstimes[int(Tind[ii])]) - float(obstimes[int(Tind[jj])]))
                 factor *= math.exp(-DistT / RcorT)
-            LocM[ii, jj] = LocM[jj, ii] = factor
             B[ii, jj] = B[jj, ii] = B[ii, jj] * factor
-    return B, LocM
+    return B

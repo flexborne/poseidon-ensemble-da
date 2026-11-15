@@ -30,16 +30,16 @@ def test_seed_and_rng_mutually_exclusive():
 
 # ---- R5a: geometry with a duplicate box id is rejected ------------------------
 
-def test_validate_geometry_rejects_duplicate_box_id(tmp_path):
+def test_load_geometry_rejects_duplicate_box_id(tmp_path):
     from openpyxl import Workbook
-    from poseidon_da.geometry import validate_geometry
+    from poseidon_da.geometry import load_geometry
     path = tmp_path / 'geom.xlsx'
     wb = Workbook(); ws = wb.active; ws.title = 'Sheet1'
     for row in ([4] + [0] * 10, [5] + [0] * 10, [5] + [0] * 10):   # box 5 duplicated
         ws.append(row)
     wb.save(path)
-    problems = validate_geometry(path)
-    assert any('duplicate' in p for p in problems)
+    with pytest.raises(ValueError, match='duplicate'):
+        load_geometry(path)
 
 
 # ---- R3: an unequal member set across dates fails before any run --------------
@@ -51,7 +51,8 @@ def test_run_cycle_requires_equal_member_set(tmp_path):
     (runs / '2.0' / '02.hydrol1dep2').mkdir(parents=True)   # extra member on date 2
     config = load_config(EXAMPLE_CASE)
     config.runs_root = runs
-    config.measurements_dir = tmp_path / 'meas'   # distinct dir, no .dat -> diagnose skipped
+    (tmp_path / 'meas').mkdir()                    # exists but empty -> diagnose skipped
+    config.measurements_dir = tmp_path / 'meas'
     called = []
     with pytest.raises(ValueError, match='member set'):
         run_cycle(config, tmp_path / 'out', mode='noda', dates=['1.0', '2.0'],

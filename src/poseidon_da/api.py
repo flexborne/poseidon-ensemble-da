@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from . import workflow
-from .config import Config, load_config, protected_inputs, validate  # load_config re-exported
+from .config import Config, load_config, protected_inputs, validate, validate_diagnose  # load_config re-exported
 from .domain import AnalysisResult, AnalysisWindow, RunResult
 from .publish import assert_safe_dest, staged_publish
 from .results import build_manifest, export_result, write_manifest
@@ -124,8 +124,10 @@ def diagnose(config: Config, output_dir, *, date=None, force=False) -> RunResult
     """Validate, compare the forecast at `date` (default target) against observations, publish atomically."""
     from . import __version__
     assert_safe_dest(output_dir, protected_inputs(config))
-    _require_valid(config)
     date = date or config.target_time
+    problems = validate_diagnose(config, date)
+    if problems:
+        raise ValueError('invalid case:\n  - ' + '\n  - '.join(problems))
 
     with staged_publish(output_dir, force) as staging:
         ctx = RunContext.isolated(staging, runs_root=config.runs_root)
@@ -135,7 +137,7 @@ def diagnose(config: Config, output_dir, *, date=None, force=False) -> RunResult
         manifest = build_manifest(config, None, __version__, steps,
                                   localization_used=config.localization,
                                   perturbation={'enabled': False, 'seed': None},
-                                  dates=[date], member_order=members, mode='diagnose')
+                                  dates=[date], member_order=members, mode='diagnose', target_time=date)
         write_manifest(manifest, staging)
 
     out = Path(output_dir)

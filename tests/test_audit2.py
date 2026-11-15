@@ -142,10 +142,11 @@ def test_schema_problems_flags_unknown_key_and_table():
     assert any('[bogus]' in p for p in probs)
 
 
-def test_validate_surfaces_schema_issues():
-    config = load_config(EXAMPLE_CASE)
-    config.schema_issues = ['unknown config key analysis.gds']
-    assert 'unknown config key analysis.gds' in validate(config)
+def test_load_config_rejects_unknown_key(tmp_path):
+    case = tmp_path / 'case.toml'
+    case.write_text('[case]\nschema_version = 1\ncase_id = "x"\n[analysis]\ngds = 2.0\n')
+    with pytest.raises(ValueError, match='analysis.gds'):
+        load_config(case)
 
 
 def test_validate_rejects_negative_first_bdepth():
@@ -154,20 +155,23 @@ def test_validate_rejects_negative_first_bdepth():
     assert any('positive depth boundary' in p for p in validate(config))
 
 
-def test_validate_geometry_rejects_missing_columns(tmp_path):
+def test_load_geometry_rejects_missing_columns(tmp_path):
     from openpyxl import Workbook
-    from poseidon_da.geometry import validate_geometry
+    from poseidon_da.geometry import load_geometry
     path = tmp_path / 'geom.xlsx'
     wb = Workbook(); ws = wb.active; ws.title = 'Sheet1'
     ws.append([1, 2, 3])                      # far fewer than the required columns
     wb.save(path)
-    assert any('columns' in p for p in validate_geometry(path))
+    with pytest.raises(ValueError, match='columns'):
+        load_geometry(path)
 
 
 def _fake_cycle_dataset(tmp_path):
     config, runs = _fake_dataset(tmp_path)
     (runs / '2.0' / '01.hydrol1dep1').mkdir(parents=True)
-    config.measurements_dir = tmp_path / 'meas'   # distinct dir, no .dat -> diagnose skipped
+    meas = tmp_path / 'meas'
+    meas.mkdir()                                   # exists but empty -> diagnose skipped
+    config.measurements_dir = meas
     return config, runs
 
 
@@ -182,6 +186,25 @@ def test_run_cycle_rejects_unordered_dates(tmp_path):
     config, runs = _fake_cycle_dataset(tmp_path)
     with pytest.raises(ValueError, match='strictly increasing'):
         run_cycle(config, tmp_path / 'out', mode='noda', dates=['2.0', '1.0'],
+                  model_runner=lambda *a: None)
+
+
+def test_run_cycle_applies_parameter_validation(tmp_path):
+    # the shared parameter validation now runs for the cycle too (not only analyze)
+    config, runs = _fake_cycle_dataset(tmp_path)
+    config.gsd = 1.0                                   # invalid: must be > 1
+    with pytest.raises(ValueError, match='gsd'):
+        run_cycle(config, tmp_path / 'out', mode='noda', dates=['1.0', '2.0'],
+                  model_runner=lambda *a: None)
+
+
+def test_run_cycle_requires_window_states_present(tmp_path):
+    # smoother first window needs future states; date 2.0 has a member dir but no lastconc
+    config, runs = _fake_cycle_dataset(tmp_path)
+    (runs / '3.0' / '01.hydrol1dep1').mkdir(parents=True)
+    config.cycle_window_years = 1.0
+    with pytest.raises(FileNotFoundError, match='member 01.hydrol1dep1'):
+        run_cycle(config, tmp_path / 'out', mode='smoother', dates=['1.0', '2.0', '3.0'],
                   model_runner=lambda *a: None)
 
 
