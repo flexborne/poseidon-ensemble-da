@@ -55,7 +55,7 @@ poseidon-da run-cycle examples/black-sea-cs137.toml -o results/cycle-01 --mode f
 - **analyze** — обчислити аналіз; записати `analysis.npz` і `result.json`.
 - **run** — аналіз + файли перезапуску `Initconc.dat` + `out_<date>.xlsx` + `manifest.json`.
 - **diagnose** — порівняти прогноз ансамблю зі спостереженнями (без засвоєння).
-- **run-cycle** — послідовний цикл NODA/filter аналіз–прогноз по ланцюгу дат.
+- **run-cycle** — послідовний цикл аналіз–прогноз по ланцюгу дат (`--mode noda|filter|smoother`; згладжувач використовує вікна ±`window_years`, точний порт оригінального run_LN_KSF3).
 
 Прапорець `--no-perturb` — детермінований прогон (збурення спостережень = 0). Команди аналізу
 моделі не потребують. Крок прогнозу (`run-cycle`) запускає `Poseidon4.exe`; у секції `[model]`

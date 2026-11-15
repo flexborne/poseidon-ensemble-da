@@ -55,7 +55,7 @@ poseidon-da run-cycle examples/black-sea-cs137.toml -o results/cycle-01 --mode f
 - **analyze** — compute the analysis; write `analysis.npz` and `result.json`.
 - **run** — analyze + write restart `Initconc.dat` files + `out_<date>.xlsx` + a `manifest.json`.
 - **diagnose** — compare the ensemble forecast against observations (no assimilation).
-- **run-cycle** — sequential NODA/filter assimilation–forecast cycle over a date chain.
+- **run-cycle** — sequential assimilation–forecast cycle over a date chain (`--mode noda|filter|smoother`; smoother uses ±`window_years` neighbour windows, a faithful port of the original run_LN_KSF3).
 
 Add `--no-perturb` for a deterministic run (observation perturbations set to zero).
 The analysis commands do not need the model. The forecast step (`run-cycle`) runs

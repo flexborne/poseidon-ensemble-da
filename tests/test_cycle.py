@@ -7,7 +7,7 @@ import pytest
 from conftest import EXAMPLE_CASE, HAS_DATA
 
 from poseidon_da.config import load_config
-from poseidon_da.cycle import plan_cycle, run_cycle
+from poseidon_da.cycle import derive_windows, plan_cycle, run_cycle
 from poseidon_da.geometry import box_levels
 from poseidon_da.poseidon_io import read_poseidon, write_poseidon
 from poseidon_da.runner import find_members
@@ -37,9 +37,13 @@ def test_plan_cycle_noda_order(tmp_path):
     assert kinds == [('forecast', '2.0'), ('diagnose', '2.0')]
 
 
-def test_plan_cycle_smoother_is_gated(tmp_path):
-    with pytest.raises(NotImplementedError, match='smoother'):
-        plan_cycle('smoother', ['1.0', '2.0'], tmp_path)
+def test_derive_windows_matches_original():
+    # +/-0.25 yr reproduces the hardcoded run_LN_KSF3 minind/maxind for the standard sequence
+    dates = ['1986.75', '1987.5', '1988.25', '1988.5', '1988.625',
+             '1988.75', '1988.85', '1990.75', '1991.75', '2007.5']
+    minind, maxind = derive_windows(dates, 0.25)
+    assert minind == [1, 2, 3, 3, 4, 4, 5, 8, 9, 10]
+    assert maxind == [1, 2, 4, 6, 7, 7, 7, 8, 9, 10]
 
 
 def test_plan_cycle_skips_diagnose_without_measurements(tmp_path):
@@ -96,6 +100,23 @@ def test_run_cycle_noda_with_mock_model(tmp_path):
                     model_runner=_mock_model_runner(), perturb=False)
     kinds = [(s['step'], s['date']) for s in res.steps]
     assert kinds == [('forecast', '1987.5'), ('diagnose', '1987.5')]
+
+
+@requires_data
+def test_run_cycle_smoother_with_mock_model(tmp_path):
+    # three consecutive sub-year dates -> every analysis date gets a non-trivial +/- window
+    config = load_config(EXAMPLE_CASE)
+    res = run_cycle(config, tmp_path, mode='smoother',
+                    dates=['1988.25', '1988.5', '1988.625'],
+                    model_runner=_mock_model_runner(), perturb=False)
+    assert res.status == 'ok'
+    analyses = [s for s in res.steps if s['step'] == 'analyze']
+    # both analysis dates use a smoother window (not the filter degenerate case)
+    assert analyses and all(a['provenance'].get('kind') == 'smoother' for a in analyses)
+    assert res.manifest['mode'] == 'smoother' and res.manifest['window_years'] == 0.25
+    # forecasts were produced for the lookahead dates
+    assert any(s['step'] == 'forecast' for s in res.steps)
+    assert (tmp_path / 'manifest.json').exists()
 
 
 @requires_data

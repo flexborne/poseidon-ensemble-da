@@ -35,6 +35,7 @@ class Config:
     schema_version: int = 1
     cycle_mode: str = 'filter'
     cycle_dates: list = field(default_factory=list)
+    cycle_window_years: float = 0.25
 
 
 def _resolve(base: Path, value) -> Path:
@@ -75,6 +76,7 @@ def load_config(path) -> Config:
         schema_version=int(raw.get('case', {}).get('schema_version', 1)),
         cycle_mode=cycle.get('mode', 'filter'),
         cycle_dates=list(cycle.get('dates', [])),
+        cycle_window_years=float(cycle.get('window_years', 0.25)),
     )
 
 

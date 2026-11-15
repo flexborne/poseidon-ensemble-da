@@ -28,5 +28,7 @@ launcher = ["wine"]      # on Windows leave empty ([]); on macOS/Linux run via w
 use_pty = true           # POSEIDON is a console Fortran app; headless wine needs a pseudo-terminal
 
 [cycle]
-mode = "filter"                                 # noda | filter  (smoother not yet available)
-dates = ["1986.75", "1987.5", "1988.25"]        # sequential analysis-forecast date chain
+mode = "filter"                                 # noda | filter | smoother
+# sequential analysis-forecast date chain (ascending physical time)
+dates = ["1986.75", "1987.5", "1988.25", "1988.5", "1988.625", "1988.75", "1988.85", "1990.75", "1991.75"]
+window_years = 0.25                             # smoother: +/- window selecting neighbouring dates per analysis
