@@ -46,6 +46,20 @@ def test_derive_windows():
     assert maxind == [1, 2, 4, 6, 7, 7, 7, 8, 9, 10]
 
 
+def test_plan_cycle_smoother_order(tmp_path):
+    # the historic run order: analyse a window, forecast+diagnose the next date, look ahead
+    dates = ['1988.25', '1988.5', '1988.625']
+    _measurements_with(tmp_path, dates)
+    plan = plan_cycle('smoother', dates, tmp_path, window_years=0.25)
+    assert [(s.kind, s.date) for s in plan] == [
+        ('analyze', '1988.25'), ('forecast', '1988.5'), ('diagnose', '1988.5'),
+        ('forecast', '1988.625'),
+        ('analyze', '1988.5'), ('forecast', '1988.625'), ('diagnose', '1988.625')]
+    analyses = [s for s in plan if s.kind == 'analyze']
+    assert analyses[0].window == ('1988.5', '1988.25')               # past-less window, target last
+    assert analyses[1].window == ('1988.25', '1988.625', '1988.5')   # past + future, target last
+
+
 def test_plan_cycle_skips_diagnose_without_measurements(tmp_path):
     _measurements_with(tmp_path, ['1.0'])          # only the first date has a measurement file
     steps = plan_cycle('filter', ['1.0', '2.0'], tmp_path)

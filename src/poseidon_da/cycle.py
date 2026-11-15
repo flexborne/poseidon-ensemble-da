@@ -28,10 +28,11 @@ from .runner import (RunContext, copy_lastconc_to_initconc, find_members,
 
 @dataclass
 class CycleStep:
-    kind: str                       # 'analyze' | 'forecast' | 'diagnose'
-    date: str
-    time: float
-    source: str | None = None       # date whose state seeds a forecast
+    kind: str                        # 'analyze' | 'forecast' | 'diagnose'
+    date: str                        # analyze: target date; forecast/diagnose: that date
+    window: tuple | None = None      # analyze: observation dates (target last)
+    seed: str | None = None          # forecast: 'analysis' (restart file) | 'restart' (prior lastconc)
+    source: str | None = None        # forecast: date whose state seeds this one
     provenance: dict = field(default_factory=dict)
 
 
@@ -49,22 +50,69 @@ def derive_windows(dates, window_years=0.25):
     return minind, maxind
 
 
-def plan_cycle(mode: str, dates, measurements_dir) -> list:
-    """Deterministic step plan for noda/filter (smoother is planned per-window in run_cycle)."""
-    if mode not in ('noda', 'filter'):
-        raise ValueError(f"plan_cycle supports 'noda'/'filter' (got {mode!r})")
+def _diagnose_step(date, measurements_dir) -> CycleStep:
+    has_obs = (Path(measurements_dir) / f'{date}.dat').exists()
+    return CycleStep('diagnose', date,
+                     provenance={'observations': [date]} if has_obs else {'skipped': 'no measurement file'})
+
+
+def plan_cycle(mode: str, dates, measurements_dir, window_years=0.25) -> list:
+    """Deterministic step plan (analyze/forecast/diagnose records) for any of the three modes.
+
+    One plan shape for every mode, so a single executor can run it and the full sequence of
+    states, windows and restart sources is inspectable before the model runs.
+    """
     dates = list(dates)
+    if mode == 'noda':
+        return _plan_sequential(dates, measurements_dir, analyze=False)
+    if mode == 'filter':
+        return _plan_sequential(dates, measurements_dir, analyze=True)
+    if mode == 'smoother':
+        return _plan_smoother(dates, measurements_dir, window_years)
+    raise ValueError(f'unknown cycle mode {mode!r}')
+
+
+def _plan_sequential(dates, measurements_dir, analyze: bool) -> list:
+    """NODA (analyze=False) / filter (analyze=True): analyse each date, forecast to the next."""
     steps = []
     for i in range(len(dates) - 1):
         cur, nxt = dates[i], dates[i + 1]
-        if mode == 'filter':
-            steps.append(CycleStep('analyze', cur, float(cur), provenance={'observations': [cur]}))
-        steps.append(CycleStep('forecast', nxt, float(nxt), source=cur,
-                               provenance={'restart_from': cur, 'mode': mode}))
-        has_obs = (Path(measurements_dir) / f'{nxt}.dat').exists()
-        steps.append(CycleStep('diagnose', nxt, float(nxt),
-                               provenance={'observations': [nxt] if has_obs else [],
-                                           **({} if has_obs else {'skipped': 'no measurement file'})}))
+        if analyze:
+            steps.append(CycleStep('analyze', cur, window=(cur,),
+                                   provenance={'observations': [cur], 'kind': 'filter'}))
+        steps.append(CycleStep('forecast', nxt, seed='analysis' if analyze else 'restart', source=cur,
+                               provenance={'restart_from': cur}))
+        steps.append(_diagnose_step(nxt, measurements_dir))
+    return steps
+
+
+def _plan_smoother(dates, measurements_dir, window_years) -> list:
+    """Per analysis date: assimilate its +/- window, then forecast ahead to maxind(i+1)."""
+    minind, maxind = derive_windows(dates, window_years)
+    steps = []
+    for i in range(1, len(dates)):                           # 1-based analysis index, i = 1..Nd-1
+        cur = dates[i - 1]
+        if minind[i - 1] == i and maxind[i - 1] == i:        # trivial window -> filter
+            window, prov = (cur,), {'observations': [cur], 'kind': 'filter'}
+        else:                                                # smoother over the +/- window
+            meas = [dates[j - 1] for j in range(minind[i - 1], i)]           # past dates
+            meas += [dates[j - 1] for j in range(i + 1, maxind[i - 1] + 1)]  # future dates
+            meas += [cur]                                                    # target is always last
+            window = tuple(meas)
+            prov = {'observations': meas, 'kind': 'smoother', 'window_index': [minind[i - 1], maxind[i - 1]]}
+        steps.append(CycleStep('analyze', cur, window=window, provenance=prov))
+
+        lo, hi = i + 1, maxind[i]                             # forecast lookahead: maxind(i+1)
+        for j in range(lo, hi + 1):
+            fdate = dates[j - 1]
+            if j == lo:
+                steps.append(CycleStep('forecast', fdate, seed='analysis', source=cur,
+                                       provenance={'restart_from': cur}))
+                steps.append(_diagnose_step(fdate, measurements_dir))
+            else:
+                src = dates[j - 2]
+                steps.append(CycleStep('forecast', fdate, seed='restart', source=src,
+                                       provenance={'restart_from': src}))
     return steps
 
 
@@ -112,59 +160,23 @@ def _diagnose_at(config, ctx, date, bnlev):
             'provenance': {'skipped': 'no measurement file'}}
 
 
-def _run_simple(mode, plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging):
+def _execute(plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging):
+    """Run one plan: analyse windows, seed + forecast each date, diagnose against observations."""
     executed = []
     for step in plan:
         if step.kind == 'analyze':
-            executed.append(_analyze_at(AnalysisWindow(step.date, (step.date,)),
+            executed.append(_analyze_at(AnalysisWindow(step.date, step.window),
                                         config, ctx, perturb, rng, staging, step.provenance))
         elif step.kind == 'forecast':
-            if mode == 'filter':
-                publish_initconc(ctx.templates_dir, ctx.date_dir(step.date))
+            if step.seed == 'analysis':
+                publish_initconc(ctx.templates_dir, ctx.date_dir(step.date))   # from the analysis restart
             else:
                 copy_lastconc_to_initconc(ctx.date_dir(step.source), ctx.date_dir(step.date), member_set)
-            runner(ctx.date_dir(step.date), step.time, bnlev)
+            runner(ctx.date_dir(step.date), float(step.date), bnlev)
             executed.append({'step': 'forecast', 'date': step.date, 'source': step.source,
                              'status': 'ok', 'provenance': step.provenance})
         elif step.kind == 'diagnose':
-            if step.provenance.get('observations'):
-                executed.append(_diagnose_at(config, ctx, step.date, bnlev))
-            else:
-                executed.append({'step': 'diagnose', 'date': step.date, 'status': 'skipped',
-                                 'provenance': step.provenance})
-    return executed
-
-
-def _run_smoother(dates, minind, maxind, config, ctx, member_set, perturb, rng, runner, bnlev, staging):
-    """Per-date filter/smoother choice + forecast lookahead to maxind(i+1)."""
-    executed = []
-    Nd = len(dates)
-    for i in range(1, Nd):                                  # 1-based analysis index, i = 1..Nd-1
-        cur, nxt = dates[i - 1], dates[i]
-        if minind[i - 1] == i and maxind[i - 1] == i:       # trivial window -> filter
-            window = AnalysisWindow(cur, (cur,))
-            prov = {'observations': [cur], 'kind': 'filter'}
-        else:                                               # smoother over the +/- window
-            meas = [dates[j - 1] for j in range(minind[i - 1], i)]          # past dates
-            meas += [dates[j - 1] for j in range(i + 1, maxind[i - 1] + 1)]  # future dates
-            meas += [cur]                                                    # target is always last
-            window = AnalysisWindow(cur, tuple(meas))
-            prov = {'observations': meas, 'kind': 'smoother', 'window_index': [minind[i - 1], maxind[i - 1]]}
-        executed.append(_analyze_at(window, config, ctx, perturb, rng, staging, prov))
-
-        # forecast lookahead: j = i+1 .. maxind(i+1), seeding the chain forward
-        publish_initconc(ctx.templates_dir, ctx.date_dir(nxt))      # analysis of cur seeds the first leg
-        lo, hi = i + 1, maxind[i]                                   # maxind[i] (0-based) == maxind(i+1)
-        for j in range(lo, hi + 1):
-            fdate = dates[j - 1]
-            source = cur if j == lo else dates[j - 2]
-            if j > lo:
-                copy_lastconc_to_initconc(ctx.date_dir(dates[j - 2]), ctx.date_dir(fdate), member_set)
-            runner(ctx.date_dir(fdate), float(fdate), bnlev)
-            executed.append({'step': 'forecast', 'date': fdate, 'source': source,
-                             'status': 'ok', 'provenance': {'restart_from': source}})
-            if j == lo:
-                executed.append(_diagnose_at(config, ctx, fdate, bnlev))
+            executed.append(_diagnose_at(config, ctx, step.date, bnlev))
     return executed
 
 
@@ -192,10 +204,7 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
     times = [float(d) for d in dates]
     if any(times[i] >= times[i + 1] for i in range(len(times) - 1)):
         raise ValueError(f'cycle dates must be strictly increasing in physical time (got {dates})')
-    plan = plan_cycle(mode, dates, config.measurements_dir) if mode in ('noda', 'filter') else None
-    minind = maxind = None
-    if mode == 'smoother':
-        minind, maxind = derive_windows(dates, config.cycle_window_years)
+    plan = plan_cycle(mode, dates, config.measurements_dir, config.cycle_window_years)
     member_set = None
     for d in dates:
         ddir = runs_root / d
@@ -219,11 +228,7 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
             shutil.copytree(runs_root / d, work / d, dirs_exist_ok=True)
         ctx = RunContext(runs_root=work, templates_dir=staging / 'templates', outputs_dir=staging / 'outputs')
 
-        if mode == 'smoother':
-            executed = _run_smoother(dates, minind, maxind, config, ctx, member_set,
-                                     perturb, rng, runner, bnlev, staging)
-        else:
-            executed = _run_simple(mode, plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging)
+        executed = _execute(plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging)
 
         manifest = {'package_version': __version__, 'case_id': config.case_id, 'mode': mode,
                     'dates': list(dates), 'member_order': list(member_set),
