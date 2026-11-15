@@ -6,10 +6,12 @@ import sys
 
 import pytest
 
-from conftest import EXAMPLE_CASE
+from conftest import EXAMPLE_CASE, HAS_DATA
 
 from poseidon_da import api
 from poseidon_da.config import load_config
+
+requires_data = pytest.mark.skipif(not HAS_DATA, reason='experiment archive not present')
 
 
 # ---- 2.1: an output directory may never overlap the dataset inputs ------------
@@ -70,6 +72,29 @@ def test_default_localization_exclude_is_immutable():
     assert a is not b and a['exclude'] == b['exclude']
     with pytest.raises(AttributeError):
         a['exclude'].append(4)        # tuple has no append; cannot corrupt the shared default
+
+
+# ---- 2.3: analyze publishes atomically, never a mix of two runs ---------------
+
+@requires_data
+def test_write_analysis_refuses_dirty_dir_without_force(tmp_path):
+    config = load_config(EXAMPLE_CASE)
+    out = tmp_path / 'a'
+    api.write_analysis(config, out, perturb=False, seed=11)
+    with pytest.raises(FileExistsError):
+        api.write_analysis(config, out, perturb=False, seed=22)
+
+
+@requires_data
+def test_write_analysis_force_leaves_consistent_run(tmp_path):
+    import json
+    config = load_config(EXAMPLE_CASE)
+    out = tmp_path / 'a'
+    api.write_analysis(config, out, perturb=False, seed=11)
+    api.write_analysis(config, out, perturb=False, seed=22, force=True)
+    man = json.loads((out / 'manifest.json').read_text())
+    assert man['perturbation']['seed'] == 22      # manifest and npz come from the same run
+    assert (out / 'analysis.npz').exists()
 
 
 # ---- 2.4: the PTY runner releases its file descriptor ------------------------

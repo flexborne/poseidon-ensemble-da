@@ -12,7 +12,7 @@ from .publish import assert_safe_dest, staged_publish
 from .results import build_manifest, export_result, write_manifest
 from .runner import RunContext
 
-__all__ = ['load_config', 'analyze', 'run', 'Config', 'AnalysisResult', 'RunResult']
+__all__ = ['load_config', 'analyze', 'write_analysis', 'run', 'Config', 'AnalysisResult', 'RunResult']
 
 
 def _require_valid(config: Config) -> None:
@@ -51,6 +51,36 @@ def analyze(config: Config, *, perturb=True, rng=None, seed=None, output_dir=Non
     ctx = RunContext.isolated(base, runs_root=config.runs_root)
     result, _ = _analyze(config, ctx, perturb, _rng(seed, rng))
     return result
+
+
+def write_analysis(config: Config, output_dir, *, perturb=True, rng=None, seed=None, force=False) -> RunResult:
+    """Validate, analyze, and publish the analysis export (NPZ/JSON + manifest) atomically.
+
+    The same output-directory safety, non-empty refusal (unless force) and atomic publication
+    as `run`, so an analyze output directory is never a mix of two runs.
+    """
+    from . import __version__
+    assert_safe_dest(output_dir, protected_inputs(config))
+    _require_valid(config)
+    rng_obj = _rng(seed, rng)
+    perturbation = {'enabled': bool(perturb), 'seed': seed,
+                    'rng': 'external (not reconstructible)' if rng is not None else None}
+
+    with staged_publish(output_dir, force) as staging:
+        ctx = RunContext.isolated(staging, runs_root=config.runs_root)
+        result, _ = _analyze(config, ctx, perturb, rng_obj)
+        export_result(result, staging)
+        steps = [{'step': 'analyze', 'status': 'ok', 'diagnostics': result.diagnostics},
+                 {'step': 'export', 'status': 'ok'}]
+        manifest = build_manifest(config, result, __version__, steps,
+                                  localization_used=config.localization, perturbation=perturbation)
+        write_manifest(manifest, staging)
+
+    out = Path(output_dir)
+    return RunResult(status='ok', steps=steps,
+                     outputs={'npz': str(out / 'analysis.npz'), 'json': str(out / 'result.json'),
+                              'manifest': str(out / 'manifest.json')},
+                     manifest=manifest)
 
 
 def run(config: Config, output_dir, *, perturb=True, rng=None, seed=None, force=False) -> RunResult:

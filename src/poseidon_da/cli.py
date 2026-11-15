@@ -36,12 +36,9 @@ def _cmd_analyze(args):
     if _report_problems(config):
         return 1
     out = Path(args.output) if args.output else _default_output(config, 'analysis')
-    result = api.analyze(config, perturb=not args.no_perturb, seed=args.seed)
-    from .results import export_result
-    paths = export_result(result, out)
-    print(f'analyze {config.case_id}: target={result.target} '
-          f'state={result.log_states.shape[0]} members={result.log_states.shape[1]}')
-    print(f'  wrote {paths["npz"]}')
+    result = api.write_analysis(config, out, perturb=not args.no_perturb, seed=args.seed, force=args.force)
+    print(f'analyze {config.case_id}: {result.status}')
+    print(f'  outputs: {out}')
     return 0
 
 
@@ -103,7 +100,7 @@ def build_parser():
             sp.add_argument('--no-perturb', action='store_true',
                             help='disable observation perturbations (deterministic)')
             sp.add_argument('--seed', type=int, default=None, help='RNG seed for perturbations')
-        if name == 'run':
+        if name in ('analyze', 'run'):
             sp.add_argument('--force', action='store_true', help='overwrite a non-empty output directory')
         sp.set_defaults(func=func)
 
