@@ -127,6 +127,17 @@ def test_run_poseidon_all_does_not_accept_stale_output(tmp_path):
     assert not (member / 'lastconc.xls').exists()   # stale output was removed
 
 
+def test_run_executable_under_pty(tmp_path):
+    # the pty path (for headless console apps / wine) runs and surfaces the exit code
+    from poseidon_da.runner import run_executable_in_dir
+    exe = tmp_path / 'fake.exe'
+    exe.write_text('')
+    run_executable_in_dir(tmp_path, exe_path=exe, launcher=[sys.executable, '-c', 'pass'], use_pty=True)
+    with pytest.raises(RuntimeError):
+        run_executable_in_dir(tmp_path, exe_path=exe,
+                              launcher=[sys.executable, '-c', 'import sys; sys.exit(3)'], use_pty=True)
+
+
 def test_run_poseidon_all_rejects_missing_dir(tmp_path):
     with pytest.raises(FileNotFoundError):
         run_poseidon_all(tmp_path / 'does-not-exist')

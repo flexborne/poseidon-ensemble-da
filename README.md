@@ -58,8 +58,11 @@ poseidon-da run-cycle examples/black-sea-cs137.toml -o results/cycle-01 --mode f
 - **run-cycle** — sequential NODA/filter assimilation–forecast cycle over a date chain.
 
 Add `--no-perturb` for a deterministic run (observation perturbations set to zero).
-The forecast step itself requires `Poseidon4.exe` (run via `wine` on Linux/macOS); the
-analysis commands do not.
+The analysis commands do not need the model. The forecast step (`run-cycle`) runs
+`Poseidon4.exe`; set `[model]` in the case — `launcher = ["wine"]` on Linux/macOS (empty on
+Windows) and `use_pty = true`, because POSEIDON is a console Fortran app and headless `wine`
+needs a pseudo-terminal. This has been run end-to-end on macOS/arm64 (wine 11 staging): a real
+3-date filter cycle reproduced the archived forecast outputs exactly.
 
 ---
 
@@ -110,7 +113,8 @@ exclude       = [1, 2, 3, 49, 50]
 
 [model]
 executable = "../bin/Poseidon4.exe"
-launcher   = ["wine"]
+launcher   = ["wine"]   # empty on Windows
+use_pty    = true       # headless console app needs a pseudo-terminal
 ```
 
 `target_time` must be the last of `observation_times`. See [examples/black-sea-cs137.toml](examples/black-sea-cs137.toml).

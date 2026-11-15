@@ -98,18 +98,46 @@ def _executable_command(exe_path: Path, launcher=None) -> list:
     raise RuntimeError(f'Cannot run {exe_path}: not on Windows and `wine` not found')
 
 
-def run_executable_in_dir(directory, exe_path=None, launcher=None) -> None:
+def _run_in_pty(argv, cwd) -> int:
+    """Run argv in cwd under a pseudo-terminal, returning the exit code.
+
+    A console program that writes to the terminal device (e.g. a Fortran app using
+    CONOUT$) needs a real console; headless `wine` otherwise fails. pty.fork() gives the
+    child its own controlling tty, so this works even with no tty on the parent.
+    """
+    import pty
+    pid, fd = pty.fork()
+    if pid == 0:                                   # child
+        try:
+            os.chdir(cwd)
+            os.execvp(argv[0], argv)
+        except BaseException:
+            os._exit(127)
+    while True:                                    # parent: drain the pty until the child exits
+        try:
+            if not os.read(fd, 4096):
+                break
+        except OSError:
+            break
+    return os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
+
+
+def run_executable_in_dir(directory, exe_path=None, launcher=None, use_pty=False) -> None:
     directory = Path(directory)
     exe_path = Path(exe_path) if exe_path else paths.poseidon_exe_path()
     if not exe_path.exists():
         raise FileNotFoundError(f'POSEIDON executable not found: {exe_path}')
-    result = subprocess.run(_executable_command(exe_path, launcher), cwd=directory)
-    if result.returncode != 0:
-        raise RuntimeError(f'{exe_path.name} failed in {directory} with exit code {result.returncode}')
+    cmd = _executable_command(exe_path, launcher)
+    if use_pty:                                    # headless console apps (e.g. wine) need a tty
+        rc = _run_in_pty(cmd, str(directory))
+    else:
+        rc = subprocess.run(cmd, cwd=directory).returncode
+    if rc != 0:
+        raise RuntimeError(f'{exe_path.name} failed in {directory} with exit code {rc}')
 
 
 def run_poseidon_all(date_dir, members=None, expected_members=None, exe_path=None,
-                     launcher=None, expected_time=None, bnlev=None) -> None:
+                     launcher=None, expected_time=None, bnlev=None, use_pty=False) -> None:
     """Run POSEIDON in every member folder of a date, verifying a FRESH output.
 
     Any pre-existing lastconc.xls is removed before the run, so a stale file can never
@@ -142,7 +170,7 @@ def run_poseidon_all(date_dir, members=None, expected_members=None, exe_path=Non
         out = folder / 'lastconc.xls'
         if out.exists():
             out.unlink()                       # never treat a previous output as this run's result
-        run_executable_in_dir(folder, exe_path=exe_path, launcher=launcher)
+        run_executable_in_dir(folder, exe_path=exe_path, launcher=launcher, use_pty=use_pty)
         if not out.exists():
             raise RuntimeError(f'run_poseidon_all: {name} produced no lastconc.xls')
         if bnlev is not None and expected_time is not None:

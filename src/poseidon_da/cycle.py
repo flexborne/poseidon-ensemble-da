@@ -59,7 +59,8 @@ def _default_model_runner(config, members):
     def runner(date_dir, expected_time, bnlev):
         run_poseidon_all(date_dir, members=members, expected_members=members,
                          expected_time=expected_time, bnlev=bnlev,
-                         exe_path=config.model_executable, launcher=config.launcher)
+                         exe_path=config.model_executable, launcher=config.launcher,
+                         use_pty=config.use_pty)
     return runner
 
 

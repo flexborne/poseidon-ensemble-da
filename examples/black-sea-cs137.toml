@@ -24,7 +24,8 @@ exclude = [1, 2, 3, 49, 50]
 
 [model]
 executable = "../bin/Poseidon4.exe"
-launcher = ["wine"]
+launcher = ["wine"]      # on Windows leave empty ([]); on macOS/Linux run via wine
+use_pty = true           # POSEIDON is a console Fortran app; headless wine needs a pseudo-terminal
 
 [cycle]
 mode = "filter"                                 # noda | filter  (smoother not yet available)

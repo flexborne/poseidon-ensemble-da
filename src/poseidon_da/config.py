@@ -31,6 +31,7 @@ class Config:
     localization: dict = field(default_factory=lambda: dict(DEFAULT_LOCALIZATION))
     model_executable: Path | None = None
     launcher: list = field(default_factory=list)
+    use_pty: bool = False
     schema_version: int = 1
     cycle_mode: str = 'filter'
     cycle_dates: list = field(default_factory=list)
@@ -70,6 +71,7 @@ def load_config(path) -> Config:
         localization={**DEFAULT_LOCALIZATION, **raw.get('localization', {})},
         model_executable=_resolve(base, exe) if exe else None,
         launcher=list(model.get('launcher', [])),
+        use_pty=bool(model.get('use_pty', False)),
         schema_version=int(raw.get('case', {}).get('schema_version', 1)),
         cycle_mode=cycle.get('mode', 'filter'),
         cycle_dates=list(cycle.get('dates', [])),
