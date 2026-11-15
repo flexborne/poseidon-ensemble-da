@@ -52,6 +52,26 @@ def test_run_cycle_refuses_output_equal_to_dataset(tmp_path):
                   model_runner=lambda *a: None, force=True)
 
 
+# ---- 2.2: independently loaded configs must not share mutable localization ----
+
+def test_configs_do_not_share_localization_exclude():
+    first = load_config(EXAMPLE_CASE)
+    second = load_config(EXAMPLE_CASE)
+    assert first.localization is not second.localization
+    # exclude is an immutable tuple, so it cannot be mutated in place at all
+    assert isinstance(first.localization['exclude'], tuple)
+    assert isinstance(second.localization['exclude'], tuple)
+
+
+def test_default_localization_exclude_is_immutable():
+    from poseidon_da.config import normalize_localization
+    a = normalize_localization()
+    b = normalize_localization()
+    assert a is not b and a['exclude'] == b['exclude']
+    with pytest.raises(AttributeError):
+        a['exclude'].append(4)        # tuple has no append; cannot corrupt the shared default
+
+
 # ---- 2.4: the PTY runner releases its file descriptor ------------------------
 
 def _open_fd_count():

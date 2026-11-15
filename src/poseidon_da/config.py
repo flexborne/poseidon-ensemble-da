@@ -14,7 +14,19 @@ SUPPORTED_SCHEMA = 1
 DEFAULT_GSD = 1.3
 DEFAULT_BDEPTHS = [25, 100, 500, 2000]
 DEFAULT_LOCALIZATION = {'horizontal_m': 100000.0, 'vertical_m': 100.0,
-                        'temporal_years': 1.0, 'exclude': [1, 2, 3, 49, 50]}
+                        'temporal_years': 1.0, 'exclude': (1, 2, 3, 49, 50)}
+
+
+def normalize_localization(overrides=None) -> dict:
+    """Localization settings with defaults applied and `exclude` as an immutable tuple.
+
+    Returns a fresh dict every call so independently loaded configs never share mutable
+    state (the `exclude` list in particular).
+    """
+    loc = dict(DEFAULT_LOCALIZATION)
+    loc.update(overrides or {})
+    loc['exclude'] = tuple(loc.get('exclude', ()))
+    return loc
 
 
 @dataclass
@@ -28,7 +40,7 @@ class Config:
     observation_times: list
     gsd: float = DEFAULT_GSD
     bdepths: list = field(default_factory=lambda: list(DEFAULT_BDEPTHS))
-    localization: dict = field(default_factory=lambda: dict(DEFAULT_LOCALIZATION))
+    localization: dict = field(default_factory=normalize_localization)
     model_executable: Path | None = None
     launcher: list = field(default_factory=list)
     use_pty: bool = False
@@ -74,7 +86,7 @@ def load_config(path) -> Config:
         observation_times=times,
         gsd=float(analysis.get('gsd', DEFAULT_GSD)),
         bdepths=list(analysis['bdepths']) if 'bdepths' in analysis else list(DEFAULT_BDEPTHS),
-        localization={**DEFAULT_LOCALIZATION, **raw.get('localization', {})},
+        localization=normalize_localization(raw.get('localization', {})),
         model_executable=_resolve(base, exe) if exe else None,
         launcher=list(model.get('launcher', [])),
         use_pty=bool(model.get('use_pty', False)),

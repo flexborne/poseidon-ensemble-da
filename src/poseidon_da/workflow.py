@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .analysis import analysis_update
-from .config import DEFAULT_BDEPTHS, DEFAULT_LOCALIZATION
+from .config import DEFAULT_BDEPTHS, normalize_localization
 from .covariance import estimate_covariance, localize_covariance
 from .domain import AnalysisResult, AnalysisWindow
 from .geometry import box_levels, layer_depths_from_bdepths, load_box_centers
@@ -43,7 +43,7 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
             gsd=1.3, localization=None, bdepths=None, perturb=True, rng=None):
     """Run one analysis (a single-date window is the filter). Returns (AnalysisResult, RestartPayload)."""
     rng = rng if rng is not None else np.random.default_rng()
-    loc = {**DEFAULT_LOCALIZATION, **(localization or {})}
+    loc = normalize_localization(localization)
     bdepths = list(bdepths) if bdepths is not None else list(DEFAULT_BDEPTHS)
     depb = layer_depths_from_bdepths(bdepths)
     sigma = float(np.log(gsd))
