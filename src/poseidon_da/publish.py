@@ -13,6 +13,32 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
+def _within(a: Path, b: Path) -> bool:
+    """True if `a` is `b` or lives inside `b` (both already resolved)."""
+    try:
+        a.relative_to(b)
+        return True
+    except ValueError:
+        return False
+
+
+def assert_safe_dest(dest, protected) -> None:
+    """Refuse an output directory that overlaps a protected input path.
+
+    Publication replaces `dest` wholesale (rename + backup), so a destination that equals,
+    contains, or sits inside the dataset / measurements / geometry would destroy or
+    contaminate the inputs. This is the single check both `run` and `run_cycle` apply before
+    writing anything.
+    """
+    dest = Path(dest).resolve()
+    for raw in protected:
+        p = Path(raw).resolve()
+        if dest == p or _within(dest, p) or _within(p, dest):
+            raise ValueError(
+                f'output directory {dest} overlaps a protected input ({p}); '
+                f'choose an output path outside the dataset')
+
+
 @contextmanager
 def staged_publish(dest, force: bool = False):
     """Yield a staging dir; on clean exit publish it to `dest` atomically.

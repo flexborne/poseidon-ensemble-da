@@ -38,6 +38,11 @@ class Config:
     cycle_window_years: float = 0.25
 
 
+def protected_inputs(config: Config) -> list:
+    """Input paths that an output directory must never overlap (dataset, measurements, geometry)."""
+    return [config.runs_root, config.measurements_dir, config.geometry]
+
+
 def _resolve(base: Path, value) -> Path:
     p = Path(value)
     return p if p.is_absolute() else (base / p).resolve()

@@ -19,7 +19,8 @@ import numpy as np
 from . import workflow
 from .domain import AnalysisWindow, RunResult
 from .geometry import box_levels
-from .publish import staged_publish
+from .config import protected_inputs
+from .publish import assert_safe_dest, staged_publish
 from .results import export_result, write_manifest
 from .runner import (RunContext, copy_lastconc_to_initconc, find_members,
                      publish_initconc, run_poseidon_all)
@@ -183,6 +184,7 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
     runs_root = Path(config.runs_root)
 
     # ---- validate everything before any write ----
+    assert_safe_dest(output_dir, protected_inputs(config))          # never overwrite the dataset (R2.1)
     for d in dates:
         _validate_date_path(d, runs_root)                           # numeric + safe path component (R2)
     plan = plan_cycle(mode, dates, config.measurements_dir) if mode in ('noda', 'filter') else None

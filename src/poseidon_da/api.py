@@ -6,9 +6,9 @@ from pathlib import Path
 import numpy as np
 
 from . import workflow
-from .config import Config, load_config, validate  # load_config re-exported
+from .config import Config, load_config, protected_inputs, validate  # load_config re-exported
 from .domain import AnalysisResult, AnalysisWindow, RunResult
-from .publish import staged_publish
+from .publish import assert_safe_dest, staged_publish
 from .results import build_manifest, export_result, write_manifest
 from .runner import RunContext
 
@@ -60,6 +60,7 @@ def run(config: Config, output_dir, *, perturb=True, rng=None, seed=None, force=
     failure (or an aborted force-run) leaves the previous complete output intact, never a mix.
     """
     from . import __version__
+    assert_safe_dest(output_dir, protected_inputs(config))          # never overwrite the dataset (2.1)
     _require_valid(config)
     rng_obj = _rng(seed, rng)
     perturbation = {'enabled': bool(perturb), 'seed': seed,
