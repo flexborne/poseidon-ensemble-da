@@ -12,7 +12,7 @@ from .domain import AnalysisResult, AnalysisWindow
 from .geometry import box_levels, layer_depths_from_bdepths, load_geometry
 from .observations import aggregate_observations
 from .physical import to_concentration
-from .poseidon_io import read_state, write_poseidon, xlswrite
+from .poseidon_io import read_state, write_poseidon, write_sheets
 from .runner import RunContext, find_members
 from .state import build_layout, observation_indices, validate_observation_coords
 
@@ -127,13 +127,15 @@ def write_restarts(result: AnalysisResult, payload: RestartPayload, ctx: RunCont
 
 
 def write_outputs(result: AnalysisResult, payload: RestartPayload, ctx: RunContext) -> None:
-    """Write out_<date>.xlsx: obs sheet(s), one sheet per member, and Ens (geometric mean)."""
-    for d, batch in zip(payload.dates, payload.batches):
-        xlswrite(str(ctx.output_xlsx(d)), np.concatenate((batch['values'], batch['brefnum']), axis=1), 'obs')
+    """Write out_<date>.xlsx: obs sheet(s), and for the target date one sheet per member + Ens."""
     obs_idx, sl = result.obs_indices, payload.target_obs_slice   # explicit observation-space slice
-    for i, member in enumerate(payload.members):
-        xlswrite(str(ctx.output_xlsx(result.target)), np.exp(result.log_states[obs_idx, i])[sl].reshape(-1, 1), member)
-    xlswrite(str(ctx.output_xlsx(result.target)), result.geometric_mean[obs_idx][sl].reshape(-1, 1), 'Ens')
+    for d, batch in zip(payload.dates, payload.batches):
+        sheets = {'obs': np.concatenate((batch['values'], batch['brefnum']), axis=1)}
+        if d == result.target:
+            for i, member in enumerate(payload.members):
+                sheets[member] = np.exp(result.log_states[obs_idx, i])[sl].reshape(-1, 1)
+            sheets['Ens'] = result.geometric_mean[obs_idx][sl].reshape(-1, 1)
+        write_sheets(str(ctx.output_xlsx(d)), sheets)
 
 
 def write_forecast_diagnostics(config, ctx: RunContext, date, bnlev=None):
@@ -151,11 +153,12 @@ def write_forecast_diagnostics(config, ctx: RunContext, date, bnlev=None):
     members = find_members(ctx.date_dir(date))
     No = obs.shape[0]
     ens = np.zeros((No, 1))
-    xlswrite(str(ctx.output_xlsx(date)), np.concatenate((obs, brn), axis=1), 'obs')
+    sheets = {'obs': np.concatenate((obs, brn), axis=1)}
     for m in members:
         arr, _, _, _ = read_state(str(ctx.date_dir(date) / m / 'lastconc.xls'), bnlev, expected_time=float(date))
         sim = np.array([[arr[int(brn[L, 0]) - 1, int(brl[L, 0]) - 1]] for L in range(No)])
         ens += sim
-        xlswrite(str(ctx.output_xlsx(date)), sim, m)
-    xlswrite(str(ctx.output_xlsx(date)), ens / np.single(len(members)), 'arithmetic_mean')
+        sheets[m] = sim
+    sheets['arithmetic_mean'] = ens / np.single(len(members))
+    write_sheets(str(ctx.output_xlsx(date)), sheets)
     return obs, members

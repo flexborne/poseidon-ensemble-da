@@ -19,10 +19,6 @@ class RunContext:
     outputs_dir: Path     # where out_*.xlsx / obs_pos.xlsx / obs2pos.mat go
 
     @classmethod
-    def default(cls) -> "RunContext":
-        return cls(runs_root=paths.RUNS_ROOT, templates_dir=paths.TEMPLATES_DIR, outputs_dir=paths.OUTPUTS_DIR)
-
-    @classmethod
     def isolated(cls, workdir, runs_root=None) -> "RunContext":
         """A context whose writable outputs live under workdir (tests / parallel runs)."""
         workdir = Path(workdir)
@@ -44,12 +40,6 @@ class RunContext:
 
     def output_xlsx(self, strdate: str) -> Path:
         return self._outputs() / f'out_{strdate}.xlsx'
-
-    def obs_pos_xlsx(self) -> Path:
-        return self._outputs() / 'obs_pos.xlsx'
-
-    def obs2pos_mat(self) -> Path:
-        return self._outputs() / 'obs2pos.mat'
 
 
 # ---- file plumbing -------------------------------------------------------------

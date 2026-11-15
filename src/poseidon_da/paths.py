@@ -11,8 +11,6 @@ BIN_DIR = PROJECT_ROOT / 'bin'
 CONFIG_DIR = PROJECT_ROOT / 'config'
 MEASUREMENTS_DIR = PROJECT_ROOT / 'measurements.exp2'
 RUNS_ROOT = PROJECT_ROOT / 'DAruns' / '01.RunKFS'
-TEMPLATES_DIR = RUNS_ROOT / 'templates'
-OUTPUTS_DIR = RUNS_ROOT / 'outputs'
 
 
 def box_surfareas_with_centers_path() -> Path:

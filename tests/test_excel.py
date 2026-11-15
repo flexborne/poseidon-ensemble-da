@@ -5,17 +5,18 @@ import numpy as np
 import pytest
 
 from poseidon_da.paths import box_surfareas_with_centers_path
-from poseidon_da.poseidon_io import load_numeric_excel, xlswrite
+from poseidon_da.poseidon_io import load_numeric_excel, write_sheets
 
 
-def test_xlswrite_preserves_multiple_sheets(tmp_path):
+def test_write_sheets_writes_all_sheets_in_order(tmp_path):
     from openpyxl import load_workbook
     path = tmp_path / 'multi.xlsx'
-    xlswrite(str(path), np.array([[1.0], [2.0]]), 'a')
-    xlswrite(str(path), np.array([[3.0], [4.0]]), 'b')
-    xlswrite(str(path), np.array([[5.0]]), 'c')
+    write_sheets(str(path), {'a': np.array([[1.0], [2.0]]),
+                             'b': np.array([[3.0], [4.0]]),
+                             'c': np.array([[5.0]])})
     wb = load_workbook(path)
-    assert {'a', 'b', 'c'}.issubset(set(wb.sheetnames))
+    assert wb.sheetnames == ['a', 'b', 'c']
+    assert wb['b']['A2'].value == 4.0
 
 
 def test_load_numeric_excel_named_sheet_and_missing():

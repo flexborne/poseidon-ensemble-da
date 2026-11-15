@@ -160,27 +160,20 @@ def _normalize_2d(data) -> np.ndarray:
     return arr
 
 
-def xlswrite(path_like, data, sheet_name: str = 'Sheet1') -> None:
-    """Write an array to a dedicated sheet of an Excel workbook (accumulating sheets)."""
+def write_sheets(path_like, sheets) -> None:
+    """Write {sheet_name: 2D-array-like} to one workbook in a single save (sheet order preserved)."""
     path = Path(path_like)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        try:
-            wb = load_workbook(path)
-        except Exception as exc:
-            raise IOError(f'xlswrite: cannot open existing workbook {path}: {exc}') from exc
-    else:
-        wb = Workbook()
-        wb.active.title = 'Sheet1'
-    if sheet_name in wb.sheetnames:
-        wb.remove(wb[sheet_name])
-    ws = wb.create_sheet(title=str(sheet_name).strip())
-    arr = _normalize_2d(data)
-    for i in range(arr.shape[0]):
-        for j in range(arr.shape[1]):
-            value = arr[i, j]
-            if isinstance(value, np.generic):
-                value = value.item()
-            ws.cell(row=i + 1, column=j + 1, value=value)
+    wb = Workbook()
+    wb.remove(wb.active)
+    for name, data in sheets.items():
+        ws = wb.create_sheet(title=str(name).strip())
+        arr = _normalize_2d(data)
+        for i in range(arr.shape[0]):
+            for j in range(arr.shape[1]):
+                value = arr[i, j]
+                if isinstance(value, np.generic):
+                    value = value.item()
+                ws.cell(row=i + 1, column=j + 1, value=value)
     wb.save(path)
     wb.close()
