@@ -9,8 +9,7 @@ import pytest
 from conftest import EXAMPLE_CASE, HAS_DATA, a_lastconc
 
 from poseidon_da import api
-from poseidon_da.api import _rng
-from poseidon_da.config import load_config, validate
+from poseidon_da.config import load_config, resolve_perturbation, validate
 from poseidon_da.cycle import run_cycle
 from poseidon_da.geometry import box_levels
 from poseidon_da.poseidon_io import read_poseidon, read_state
@@ -21,12 +20,15 @@ BNLEV = box_levels()
 
 # ---- R7: seed and rng are mutually exclusive ----------------------------------
 
-def test_seed_and_rng_mutually_exclusive():
+def test_resolve_perturbation():
     with pytest.raises(ValueError, match='either seed or rng'):
-        _rng(seed=1, rng=np.random.default_rng(2), perturb=True)
-    assert _rng(seed=3, rng=None, perturb=True) is not None     # perturbing -> a generator
-    assert _rng(seed=None, rng=None, perturb=True) is not None  # fresh generator when perturbing
-    assert _rng(seed=None, rng=None, perturb=False) is None     # not perturbing -> none needed
+        resolve_perturbation(seed=1, rng=np.random.default_rng(2), perturb=True)
+    rng, meta = resolve_perturbation(seed=3, rng=None, perturb=True)
+    assert rng is not None and meta['seed'] == 3
+    rng, meta = resolve_perturbation(seed=None, rng=None, perturb=True)    # fresh seed materialized
+    assert rng is not None and isinstance(meta['seed'], int)              # ...and recorded for reproducibility
+    rng, meta = resolve_perturbation(seed=None, rng=None, perturb=False)
+    assert rng is None and meta['enabled'] is False
 
 
 # ---- R5a: geometry with a duplicate box id is rejected ------------------------

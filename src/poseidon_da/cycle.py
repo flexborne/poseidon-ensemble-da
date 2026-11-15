@@ -18,7 +18,8 @@ import numpy as np
 from . import workflow
 from .domain import AnalysisWindow, RunResult
 from .geometry import box_levels
-from .config import normalize_localization, protected_inputs, validate_parameters
+from .config import (normalize_localization, protected_inputs, raise_if_invalid,
+                     resolve_perturbation, validate_parameters)
 from .publish import assert_safe_dest, staged_publish
 from .results import build_manifest, export_result, write_manifest
 from .runner import (RunContext, copy_lastconc_to_initconc, find_members,
@@ -200,9 +201,7 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
         raise ValueError(f'cycle dates must be strictly increasing in physical time (got {dates})')
     plan = plan_cycle(mode, dates, config.measurements_dir, config.cycle_window_years)
     if any(s.kind == 'analyze' for s in plan):                     # assimilation params only when analysing
-        problems = validate_parameters(config)
-        if problems:
-            raise ValueError('invalid case:\n  - ' + '\n  - '.join(problems))
+        raise_if_invalid(validate_parameters(config))
     member_set = None
     for d in dates:
         ddir = runs_root / d
@@ -234,7 +233,7 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
             produced.add(step.date)
 
     bnlev = box_levels()
-    rng = np.random.default_rng(seed) if (perturb or seed is not None) else None   # one generator for the cycle
+    rng, perturbation = resolve_perturbation(seed, None, perturb)   # one generator for the whole cycle
     runner = model_runner or _default_model_runner(config, member_set)
 
     with staged_publish(output_dir, force) as staging:
@@ -247,8 +246,7 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
 
         manifest = build_manifest(
             config, __version__, executed, operation='cycle', target_time=None,
-            dates=dates, member_ids=member_set,
-            perturbation={'enabled': bool(perturb), 'seed': seed}, mode=mode,
+            dates=dates, member_ids=member_set, perturbation=perturbation, mode=mode,
             window_years=config.cycle_window_years if mode == 'smoother' else None)
         write_manifest(manifest, staging)
 

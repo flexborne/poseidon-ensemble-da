@@ -27,7 +27,9 @@ def schema_problems(raw: dict) -> list:
     for table, value in raw.items():
         if table not in SCHEMA:
             problems.append(f'unknown config table [{table}]')
-        elif isinstance(value, dict):
+        elif not isinstance(value, dict):
+            problems.append(f'config table [{table}] must be a table')
+        else:
             problems += [f'unknown config key {table}.{k}' for k in value if k not in SCHEMA[table]]
     return problems
 
@@ -80,9 +82,32 @@ def protected_inputs(config: Config) -> list:
     return paths
 
 
+def raise_if_invalid(problems) -> None:
+    """Raise a single ValueError listing all problems (shared by every public operation)."""
+    if problems:
+        raise ValueError('invalid case:\n  - ' + '\n  - '.join(problems))
+
+
+def resolve_perturbation(seed, rng, perturb):
+    """Return (rng_or_None, manifest_metadata) for a run.
+
+    When perturbing without an explicit seed/rng, materialize a seed so the manifest records
+    something reproducible instead of silently drawing OS entropy.
+    """
+    if rng is not None and seed is not None:
+        raise ValueError('pass either seed or rng, not both')
+    if not perturb:
+        return None, {'enabled': False, 'seed': None, 'rng': None}
+    if rng is not None:
+        return rng, {'enabled': True, 'seed': None, 'rng': 'external (not reconstructible)'}
+    if seed is None:
+        seed = int(np.random.SeedSequence().entropy)
+    return np.random.default_rng(seed), {'enabled': True, 'seed': seed, 'rng': None}
+
+
 def _resolve(base: Path, value) -> Path:
     p = Path(value)
-    return p if p.is_absolute() else (base / p).resolve()
+    return (p if p.is_absolute() else base / p).resolve()   # normalize both for the overlap guard
 
 
 def load_config(path) -> Config:

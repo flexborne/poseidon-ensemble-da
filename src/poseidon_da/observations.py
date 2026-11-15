@@ -6,24 +6,21 @@ import numpy as np
 SURFACE_DEPTH_M = 10.0
 
 
-def locate_point3D(slon, slat, sdepth, boxnum, boxlons, boxlats, boxnlev, bdepths):
-    """0-based box indices and the 1-based vertical level a point (lon, lat, depth) falls into.
+def _vertical_level(sdepth, nlev, bdepths) -> int:
+    """1-based depth bin for a point, clamped to this box's own level count."""
+    for j in range(int(nlev)):
+        if sdepth < bdepths[j]:
+            return j + 1
+    return int(nlev)
 
-    Rectangle bounds are inclusive, so a point on a shared edge lands in each adjacent box.
-    """
-    bind = [i for i in range(len(boxnum))
+
+def locate_point3D(slon, slat, boxlons, boxlats):
+    """0-based indices of every box a point (lon, lat) falls into (inclusive rectangle bounds)."""
+    bind = [i for i in range(boxlons.shape[0])
             if (boxlons[i, 0] <= slon <= boxlons[i, 1]) and (boxlats[i, 0] <= slat <= boxlats[i, 1])]
     if not bind:
         raise ValueError(f'point (lon={slon}, lat={slat}) is outside the box system')
-
-    blev = 0
-    for j in range(int(boxnlev[bind[0]])):
-        if sdepth < bdepths[j]:
-            blev = j + 1
-            break
-    if blev == 0:
-        blev = int(boxnlev[bind[0]])
-    return bind, blev
+    return bind
 
 
 def aggregate_observations(dat_path, geometry, bdepths, expected_time=None, time_tol=1e-6):
@@ -58,10 +55,11 @@ def aggregate_observations(dat_path, geometry, bdepths, expected_time=None, time
 
     box_st = {(j, k): [] for j in range(Nbox) for k in range(Maxlev)}
     for i in range(Ns):
-        bind, blev = locate_point3D(slon[i], slat[i], SURFACE_DEPTH_M, boxnum, boxlons, boxlats, boxnlev, bdepths)
+        bind = locate_point3D(slon[i], slat[i], boxlons, boxlats)
         if len(bind) > 4:
             raise ValueError(f'measurement {i + 1} belongs to more than 4 boxes')
         for bj in bind:
+            blev = _vertical_level(SURFACE_DEPTH_M, boxnlev[bj], bdepths)   # per-box level count
             box_st[(bj, blev - 1)].append(sval[i])
 
     values, brefnum, breflev = [], [], []
@@ -72,7 +70,7 @@ def aggregate_observations(dat_path, geometry, bdepths, expected_time=None, time
                 continue
             brefnum.append(boxnum[j])
             breflev.append(k + 1)
-            values.append(sum(vals) / np.single(len(vals)))
+            values.append(sum(vals) / len(vals))
 
     return {
         'values': np.asarray(values, dtype=float),

@@ -47,7 +47,9 @@ def staged_publish(dest, force: bool = False):
     removed and `dest` is left untouched.
     """
     dest = Path(dest)
-    if dest.exists() and any(dest.iterdir()) and not force:
+    if dest.exists() and not dest.is_dir():
+        raise NotADirectoryError(f'output path is not a directory: {dest}')
+    if dest.is_dir() and any(dest.iterdir()) and not force:
         raise FileExistsError(f'output directory is not empty: {dest} (use force=True to overwrite)')
     dest.parent.mkdir(parents=True, exist_ok=True)
     staging = dest.with_name(f'.{dest.name}.staging-{uuid.uuid4().hex[:8]}')

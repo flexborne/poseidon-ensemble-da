@@ -1,13 +1,13 @@
 """Stable public API: load a case, run the analysis, materialize a run."""
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
-import numpy as np
 
 from . import workflow
 from .config import (Config, load_config, normalize_localization,  # load_config re-exported
-                     protected_inputs, validate, validate_diagnose)
+                     protected_inputs, raise_if_invalid, resolve_perturbation, validate, validate_diagnose)
 from .domain import AnalysisResult, AnalysisWindow, RunResult
 from .publish import assert_safe_dest, staged_publish
 from .results import build_manifest, export_result, write_manifest
@@ -22,21 +22,6 @@ def _prepare(config: Config) -> None:
     config.localization = normalize_localization(config.localization)
 
 
-def _require_valid(config: Config) -> None:
-    problems = validate(config)
-    if problems:
-        raise ValueError('invalid case:\n  - ' + '\n  - '.join(problems))
-
-
-def _rng(seed, rng, perturb):
-    """Finalize the RNG at operation entry: a Generator when perturbing, else None."""
-    if rng is not None and seed is not None:
-        raise ValueError('pass either seed or rng, not both')
-    if not perturb:
-        return None
-    return rng if rng is not None else np.random.default_rng(seed)
-
-
 def _analyze(config: Config, ctx: RunContext, perturb, rng):
     window = AnalysisWindow(config.target_time, tuple(config.observation_times))
     return workflow.analyze(
@@ -47,9 +32,10 @@ def _analyze(config: Config, ctx: RunContext, perturb, rng):
 def analyze(config: Config, *, perturb=True, rng=None, seed=None) -> AnalysisResult:
     """Validate the case, compute the analysis, and return the result (no files written)."""
     _prepare(config)
-    _require_valid(config)
-    ctx = RunContext.isolated(config.runs_root, runs_root=config.runs_root)
-    result, _ = _analyze(config, ctx, perturb, _rng(seed, rng, perturb))
+    raise_if_invalid(validate(config))
+    rng_obj, _ = resolve_perturbation(seed, rng, perturb)
+    ctx = RunContext.isolated(tempfile.mkdtemp(prefix='poseidon-analyze-'), runs_root=config.runs_root)
+    result, _ = _analyze(config, ctx, perturb, rng_obj)
     return result
 
 
@@ -63,10 +49,8 @@ def _publish_analysis(config: Config, output_dir, *, include_model_outputs,
     from . import __version__
     assert_safe_dest(output_dir, protected_inputs(config))          # never overwrite the dataset
     _prepare(config)
-    _require_valid(config)
-    rng_obj = _rng(seed, rng, perturb)
-    perturbation = {'enabled': bool(perturb), 'seed': seed,
-                    'rng': 'external (not reconstructible)' if rng is not None else None}
+    raise_if_invalid(validate(config))
+    rng_obj, perturbation = resolve_perturbation(seed, rng, perturb)
 
     with staged_publish(output_dir, force) as staging:
         ctx = RunContext.isolated(staging, runs_root=config.runs_root)
@@ -111,9 +95,7 @@ def diagnose(config: Config, output_dir, *, date=None, force=False) -> RunResult
     assert_safe_dest(output_dir, protected_inputs(config))
     _prepare(config)
     date = date or config.target_time
-    problems = validate_diagnose(config, date)
-    if problems:
-        raise ValueError('invalid case:\n  - ' + '\n  - '.join(problems))
+    raise_if_invalid(validate_diagnose(config, date))
 
     with staged_publish(output_dir, force) as staging:
         ctx = RunContext.isolated(staging, runs_root=config.runs_root)

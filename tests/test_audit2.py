@@ -91,10 +91,10 @@ def test_write_analysis_force_leaves_consistent_run(tmp_path):
     import json
     config = load_config(EXAMPLE_CASE)
     out = tmp_path / 'a'
-    api.write_analysis(config, out, perturb=False, seed=11)
-    api.write_analysis(config, out, perturb=False, seed=22, force=True)
+    api.write_analysis(config, out, perturb=True, seed=11)
+    api.write_analysis(config, out, perturb=True, seed=22, force=True)
     man = json.loads((out / 'manifest.json').read_text())
-    assert man['perturbation']['seed'] == 22      # manifest and npz come from the same run
+    assert man['perturbation']['seed'] == 22      # manifest and npz come from the same (second) run
     assert (out / 'analysis.npz').exists()
 
 
@@ -106,6 +106,20 @@ def _open_fd_count():
         return len(os.listdir(f'/dev/fd'))
     except OSError:
         return len(os.listdir('/proc/self/fd'))
+
+
+@requires_data
+def test_unseeded_perturbation_is_recorded_and_reproducible(tmp_path):
+    import json
+    import numpy as np
+    out = tmp_path / 'u'
+    api.write_analysis(load_config(EXAMPLE_CASE), out, perturb=True)   # no seed -> one is materialized
+    man = json.loads((out / 'manifest.json').read_text())
+    seed = man['perturbation']['seed']
+    assert isinstance(seed, int)
+    archived = np.load(out / 'analysis.npz')['log_states']
+    replay = api.analyze(load_config(EXAMPLE_CASE), perturb=True, seed=seed).log_states
+    assert np.allclose(archived, replay)       # the recorded seed reproduces the perturbed analysis
 
 
 @requires_data
@@ -157,6 +171,14 @@ def test_load_config_rejects_unknown_key(tmp_path):
     case = tmp_path / 'case.toml'
     case.write_text('[case]\nschema_version = 1\ncase_id = "x"\n[analysis]\ngds = 2.0\n')
     with pytest.raises(ValueError, match='analysis.gds'):
+        load_config(case)
+
+
+def test_load_config_rejects_non_dict_table(tmp_path):
+    # a table supplied as a scalar must be reported, not crash later with AttributeError
+    case = tmp_path / 'case.toml'
+    case.write_text('dataset = 5\n[case]\nschema_version = 1\ncase_id = "x"\n')   # top-level key first
+    with pytest.raises(ValueError, match=r'\[dataset\] must be a table'):
         load_config(case)
 
 
@@ -247,3 +269,28 @@ def test_to_concentration_reports_member(tmp_path):
     log_states[1, 2] = 1e9                         # overflows exp -> inf
     with pytest.raises(FloatingPointError, match='member m3'):
         to_concentration(log_states, member_ids=['m1', 'm2', 'm3'])
+
+
+def test_to_concentration_allows_underflow_to_zero():
+    import numpy as np
+    from poseidon_da.physical import to_concentration
+    conc = to_concentration(np.array([-10000.0, 0.0]))   # first underflows exp to 0.0
+    assert conc[0] == 0.0 and np.all(np.isfinite(conc))
+
+
+# ---- misc robustness fixes ----------------------------------------------------
+
+def test_staged_publish_rejects_file_destination(tmp_path):
+    from poseidon_da.publish import staged_publish
+    dest = tmp_path / 'afile'
+    dest.write_text('x')
+    with pytest.raises(NotADirectoryError):
+        with staged_publish(dest):
+            pass
+
+
+def test_cli_validate_bad_case_returns_1(tmp_path):
+    from poseidon_da import cli
+    case = tmp_path / 'case.toml'
+    case.write_text('[case]\nschema_version = 1\ncase_id = "x"\n[analysis]\ngsd = 0.5\n')
+    assert cli.main(['validate', str(case)]) == 1   # invalid case -> non-zero exit, no traceback

@@ -180,6 +180,7 @@ def run_poseidon_all(date_dir, members=None, exe_path=None,
         out = folder / 'lastconc.xls'
         if out.exists():
             out.unlink()                       # never treat a previous output as this run's result
+        (folder / 'poseidon.log').unlink(missing_ok=True)   # a failure tail must be from this run
         run_executable_in_dir(folder, exe_path=exe_path, launcher=launcher, use_pty=use_pty)
         if not out.exists():
             raise RuntimeError(f'run_poseidon_all: {name} produced no lastconc.xls')

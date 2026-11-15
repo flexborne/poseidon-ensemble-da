@@ -5,14 +5,15 @@ import numpy as np
 
 
 def to_concentration(log_states, member_ids=None) -> np.ndarray:
-    """exp(log_states) with a finite/positive guard (one place for every writer/exporter).
+    """exp(log_states) with a finiteness guard (one place for every writer/exporter).
 
-    Raises FloatingPointError naming the offending state row (and member id/label for a 2D
-    array) if any value is not a finite positive concentration.
+    exp is always >= 0, so only non-finite (overflow) values are rejected; a near-zero
+    concentration (underflow of a very negative log-state) is valid. Raises FloatingPointError
+    naming the offending state row (and member id/label for a 2D array) on overflow.
     """
     x = np.asarray(log_states, dtype=float)
     conc = np.exp(x)
-    bad = ~(np.isfinite(conc) & (conc > 0.0))
+    bad = ~np.isfinite(conc)
     if np.any(bad):
         idx = np.argwhere(bad)[0]
         if x.ndim == 2:

@@ -121,7 +121,7 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (ValueError, FileExistsError, FileNotFoundError) as exc:
+    except (ValueError, KeyError, FileExistsError, FileNotFoundError, NotADirectoryError) as exc:
         print(f'ERROR: {exc}', file=sys.stderr)
         return 1
 

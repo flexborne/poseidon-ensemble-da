@@ -31,19 +31,26 @@ def localize_covariance(CC, Iind, Jind, centers, layer_depths, exclude, RcorH, R
     exclude = set(int(x) for x in exclude)
     N = CC.shape[0]
     B = np.array(CC, dtype=float, copy=True)
+
+    dist_cache = {}
+    def _horizontal(a, b):                       # geo_distance depends only on the box pair; memoize it
+        if a == b:
+            return 0.0
+        key = (a, b) if a < b else (b, a)
+        d = dist_cache.get(key)
+        if d is None:
+            d = dist_cache[key] = geo_distance(*centers[a], *centers[b])
+        return d
+
     for ii in range(N):
         for jj in range(ii + 1, N):
             box1, box2 = int(Iind[ii]), int(Iind[jj])
             if (box1 + 1) in exclude or (box2 + 1) in exclude:
                 B[ii, jj] = B[jj, ii] = 0.0
                 continue
-            lat1, lon1 = centers[box1]
-            lat2, lon2 = centers[box2]
-            DistH = geo_distance(lat1, lon1, lat2, lon2)
-            DistV = abs(layer_depths[int(Jind[ii])] - layer_depths[int(Jind[jj])])
-            factor = math.exp(-DistH / RcorH) * math.exp(-DistV / RcorV)
+            dist = _horizontal(box1, box2) / RcorH
+            dist += abs(layer_depths[int(Jind[ii])] - layer_depths[int(Jind[jj])]) / RcorV
             if Tind is not None:
-                DistT = abs(float(obstimes[int(Tind[ii])]) - float(obstimes[int(Tind[jj])]))
-                factor *= math.exp(-DistT / RcorT)
-            B[ii, jj] = B[jj, ii] = B[ii, jj] * factor
+                dist += abs(float(obstimes[int(Tind[ii])]) - float(obstimes[int(Tind[jj])])) / RcorT
+            B[ii, jj] = B[jj, ii] = B[ii, jj] * math.exp(-dist)
     return B
