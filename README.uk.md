@@ -55,14 +55,12 @@ poseidon-da run-cycle examples/black-sea-cs137.toml -o results/cycle-01 --mode f
 - **analyze** — обчислити аналіз; записати `analysis.npz` і `result.json`.
 - **run** — аналіз + файли перезапуску `Initconc.dat` + `out_<date>.xlsx` + `manifest.json`.
 - **diagnose** — порівняти прогноз ансамблю зі спостереженнями (без засвоєння).
-- **run-cycle** — послідовний цикл аналіз–прогноз по ланцюгу дат (`--mode noda|filter|smoother`; згладжувач використовує вікна ±`window_years`, точний порт оригінального run_LN_KSF3).
+- **run-cycle** — послідовний цикл аналіз–прогноз по ланцюгу дат (`--mode noda|filter|smoother`; згладжувач використовує вікна ±`window_years`).
 
 Прапорець `--no-perturb` — детермінований прогон (збурення спостережень = 0). Команди аналізу
 моделі не потребують. Крок прогнозу (`run-cycle`) запускає `Poseidon4.exe`; у секції `[model]`
 задайте `launcher = ["wine"]` на Linux/macOS (порожній на Windows) і `use_pty = true`, бо
-POSEIDON — консольний Fortran-застосунок і headless-`wine` потребує псевдотермінала. Перевірено
-наскрізно на macOS/arm64 (wine 11 staging): реальний 3-датний filter-цикл точно відтворив
-архівні виходи прогнозу.
+POSEIDON — консольний Fortran-застосунок і headless-`wine` потребує псевдотермінала.
 
 ---
 

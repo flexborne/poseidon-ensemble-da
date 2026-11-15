@@ -4,12 +4,8 @@ The cycle never mutates the dataset: it copies the needed date directories into 
 work area and runs there, publishing atomically on success. The external model is injected as
 `model_runner` so the orchestration can be tested without POSEIDON.
 
-`smoother` is a faithful port of the original run_LN_KSF3: for each analysis date it uses a
-+/- window of neighbouring dates (a single-date window degenerates to the filter), then
-forecasts far enough ahead to feed the next window. NOTE (method property of the original):
-overlapping windows re-assimilate observations already present in the forecast background, and
-the window ensemble mixes members with different observation histories; this is inherited from
-the original method, not introduced by the port.
+In `smoother` mode each analysis date uses a +/- window of neighbouring dates (a single-date
+window degenerates to the filter), then forecasts far enough ahead to feed the next window.
 """
 from __future__ import annotations
 
@@ -42,8 +38,7 @@ def derive_windows(dates, window_years=0.25):
     """+/- window_years assimilation windows as 1-based (minind, maxind) over sorted dates.
 
     minind[i]/maxind[i] are the earliest/latest date indices whose physical time lies within
-    window_years of date i. With window_years=0.25 this reproduces the original run_LN_KSF3
-    hardcoded arrays for the standard 10-date sequence.
+    window_years of date i.
     """
     t = [float(d) for d in dates]
     n = len(t)
@@ -138,7 +133,7 @@ def _run_simple(mode, plan, config, ctx, member_set, perturb, rng, runner, bnlev
 
 
 def _run_smoother(dates, minind, maxind, config, ctx, member_set, perturb, rng, runner, bnlev, staging):
-    """Faithful run_LN_KSF3: per-date filter/smoother choice + forecast lookahead to maxind(i+1)."""
+    """Per-date filter/smoother choice + forecast lookahead to maxind(i+1)."""
     executed = []
     Nd = len(dates)
     for i in range(1, Nd):                                  # 1-based analysis index, i = 1..Nd-1

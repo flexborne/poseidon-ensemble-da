@@ -37,8 +37,8 @@ def test_plan_cycle_noda_order(tmp_path):
     assert kinds == [('forecast', '2.0'), ('diagnose', '2.0')]
 
 
-def test_derive_windows_matches_original():
-    # +/-0.25 yr reproduces the hardcoded run_LN_KSF3 minind/maxind for the standard sequence
+def test_derive_windows():
+    # +/-0.25 yr window selection over the standard date sequence
     dates = ['1986.75', '1987.5', '1988.25', '1988.5', '1988.625',
              '1988.75', '1988.85', '1990.75', '1991.75', '2007.5']
     minind, maxind = derive_windows(dates, 0.25)
