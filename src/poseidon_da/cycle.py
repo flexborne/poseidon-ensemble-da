@@ -10,7 +10,7 @@ window degenerates to the filter), then forecasts far enough ahead to feed the n
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -27,12 +27,28 @@ from .runner import (RunContext, copy_lastconc_to_initconc, find_members,
 
 @dataclass
 class CycleStep:
-    kind: str                        # 'analyze' | 'forecast' | 'diagnose'
-    date: str                        # analyze: target date; forecast/diagnose: that date
-    window: tuple | None = None      # analyze: observation dates (target last)
-    seed: str | None = None          # forecast: 'analysis' (restart file) | 'restart' (prior lastconc)
-    source: str | None = None        # forecast: date whose state seeds this one
-    provenance: dict = field(default_factory=dict)
+    """A single planned step. The fields are the one source of truth; `provenance` derives the
+    manifest record from them, so no fact is stored twice."""
+
+    kind: str                          # 'analyze' | 'forecast' | 'diagnose'
+    date: str                          # analyze: target date; forecast/diagnose: that date
+    window: tuple | None = None        # analyze: observation dates (target last)
+    window_kind: str | None = None     # analyze: 'filter' | 'smoother'
+    window_index: list | None = None   # analyze: [minind, maxind] of a smoother window
+    restart_kind: str | None = None    # forecast: 'analysis' (restart file) | 'restart' (prior lastconc)
+    source: str | None = None          # forecast: date whose state seeds this one
+    has_measurement: bool = False      # diagnose: a measurement file exists for this date
+
+    @property
+    def provenance(self) -> dict:
+        if self.kind == 'analyze':
+            prov = {'observations': list(self.window), 'kind': self.window_kind}
+            if self.window_index is not None:
+                prov['window_index'] = self.window_index
+            return prov
+        if self.kind == 'forecast':
+            return {'restart_from': self.source}
+        return {'observations': [self.date]} if self.has_measurement else {'skipped': 'no measurement file'}
 
 
 def derive_windows(dates, window_years=0.25):
@@ -50,9 +66,9 @@ def derive_windows(dates, window_years=0.25):
 
 
 def _diagnose_step(date, measurements_dir) -> CycleStep:
-    has_obs = (Path(measurements_dir) / f'{date}.dat').exists()
+    """The planner is the sole owner of the 'is there a measurement for this date?' decision."""
     return CycleStep('diagnose', date,
-                     provenance={'observations': [date]} if has_obs else {'skipped': 'no measurement file'})
+                     has_measurement=(Path(measurements_dir) / f'{date}.dat').exists())
 
 
 def plan_cycle(mode: str, dates, measurements_dir, window_years=0.25) -> list:
@@ -77,10 +93,8 @@ def _plan_sequential(dates, measurements_dir, analyze: bool) -> list:
     for i in range(len(dates) - 1):
         cur, nxt = dates[i], dates[i + 1]
         if analyze:
-            steps.append(CycleStep('analyze', cur, window=(cur,),
-                                   provenance={'observations': [cur], 'kind': 'filter'}))
-        steps.append(CycleStep('forecast', nxt, seed='analysis' if analyze else 'restart', source=cur,
-                               provenance={'restart_from': cur}))
+            steps.append(CycleStep('analyze', cur, window=(cur,), window_kind='filter'))
+        steps.append(CycleStep('forecast', nxt, restart_kind='analysis' if analyze else 'restart', source=cur))
         steps.append(_diagnose_step(nxt, measurements_dir))
     return steps
 
@@ -92,26 +106,22 @@ def _plan_smoother(dates, measurements_dir, window_years) -> list:
     for i in range(1, len(dates)):                           # 1-based analysis index, i = 1..Nd-1
         cur = dates[i - 1]
         if minind[i - 1] == i and maxind[i - 1] == i:        # trivial window -> filter
-            window, prov = (cur,), {'observations': [cur], 'kind': 'filter'}
+            steps.append(CycleStep('analyze', cur, window=(cur,), window_kind='filter'))
         else:                                                # smoother over the +/- window
             meas = [dates[j - 1] for j in range(minind[i - 1], i)]           # past dates
             meas += [dates[j - 1] for j in range(i + 1, maxind[i - 1] + 1)]  # future dates
             meas += [cur]                                                    # target is always last
-            window = tuple(meas)
-            prov = {'observations': meas, 'kind': 'smoother', 'window_index': [minind[i - 1], maxind[i - 1]]}
-        steps.append(CycleStep('analyze', cur, window=window, provenance=prov))
+            steps.append(CycleStep('analyze', cur, window=tuple(meas), window_kind='smoother',
+                                   window_index=[minind[i - 1], maxind[i - 1]]))
 
         lo, hi = i + 1, maxind[i]                             # forecast lookahead: maxind(i+1)
         for j in range(lo, hi + 1):
             fdate = dates[j - 1]
             if j == lo:
-                steps.append(CycleStep('forecast', fdate, seed='analysis', source=cur,
-                                       provenance={'restart_from': cur}))
+                steps.append(CycleStep('forecast', fdate, restart_kind='analysis', source=cur))
                 steps.append(_diagnose_step(fdate, measurements_dir))
             else:
-                src = dates[j - 2]
-                steps.append(CycleStep('forecast', fdate, seed='restart', source=src,
-                                       provenance={'restart_from': src}))
+                steps.append(CycleStep('forecast', fdate, restart_kind='restart', source=dates[j - 2]))
     return steps
 
 
@@ -140,25 +150,17 @@ def _cycle_time(d, runs_root: Path) -> float:
     return t
 
 
-# ---- shared step primitives ----------------------------------------------------
+# ---- execution -----------------------------------------------------------------
 
-def _analyze_at(window, config, ctx, perturb, rng, staging, provenance):
-    result, payload = workflow.analyze(
-        window, ctx, geometry_path=str(config.geometry),
+def _run_analyze(step, config, ctx, perturb, rng, staging):
+    result, data = workflow.analyze(
+        AnalysisWindow(step.date, step.window), ctx, geometry_path=str(config.geometry),
         measurements_dir=str(config.measurements_dir), gsd=config.gsd,
         localization=config.localization, bdepths=config.bdepths, perturb=perturb, rng=rng)
-    workflow.write_restarts(result, payload, ctx)
-    export_result(result, staging / 'analyses' / window.target_time)
-    return {'step': 'analyze', 'date': window.target_time, 'status': 'ok',
-            'provenance': provenance, 'diagnostics': result.diagnostics}
-
-
-def _diagnose_at(config, ctx, date, bnlev):
-    if (config.measurements_dir / f'{date}.dat').exists():
-        workflow.write_forecast_diagnostics(config, ctx, date, bnlev)
-        return {'step': 'diagnose', 'date': date, 'status': 'ok', 'provenance': {'observations': [date]}}
-    return {'step': 'diagnose', 'date': date, 'status': 'skipped',
-            'provenance': {'skipped': 'no measurement file'}}
+    workflow.write_restarts(result, data, ctx)
+    export_result(result, staging / 'analyses' / step.date)
+    return {'step': 'analyze', 'date': step.date, 'status': 'ok',
+            'provenance': step.provenance, 'diagnostics': result.diagnostics}
 
 
 def _execute(plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging):
@@ -170,10 +172,9 @@ def _execute(plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging
     executed = []
     for i, step in enumerate(plan):
         if step.kind == 'analyze':
-            rec = _analyze_at(AnalysisWindow(step.date, step.window),
-                              config, ctx, perturb, rng, staging, step.provenance)
+            rec = _run_analyze(step, config, ctx, perturb, rng, staging)
         elif step.kind == 'forecast':
-            if step.seed == 'analysis':
+            if step.restart_kind == 'analysis':
                 publish_initconc(ctx.templates_dir, ctx.date_dir(step.date))   # from the analysis restart
             else:
                 copy_lastconc_to_initconc(ctx.date_dir(step.source), ctx.date_dir(step.date), member_set)
@@ -181,7 +182,10 @@ def _execute(plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging
             rec = {'step': 'forecast', 'date': step.date, 'source': step.source,
                    'status': 'ok', 'provenance': step.provenance}
         else:  # diagnose
-            rec = _diagnose_at(config, ctx, step.date, bnlev)
+            if step.has_measurement:
+                workflow.write_forecast_diagnostics(config, ctx, step.date, bnlev)
+            rec = {'step': 'diagnose', 'date': step.date,
+                   'status': 'ok' if step.has_measurement else 'skipped', 'provenance': step.provenance}
         executed.append({'id': i, **rec})
     return executed
 
@@ -242,7 +246,7 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
             produced.add(step.date)
 
     bnlev = box_levels()
-    rng = np.random.default_rng(seed) if seed is not None else None
+    rng = np.random.default_rng(seed) if (perturb or seed is not None) else None   # one generator for the cycle
     runner = model_runner or _default_model_runner(config, member_set)
 
     with staged_publish(output_dir, force) as staging:
@@ -254,9 +258,9 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
         executed = _execute(plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging)
 
         manifest = build_manifest(
-            config, None, __version__, executed,
-            localization_used=config.localization, perturbation={'enabled': bool(perturb), 'seed': seed},
-            dates=dates, member_order=member_set, mode=mode,
+            config, __version__, executed, operation='cycle', target_time=None,
+            dates=dates, member_ids=member_set, localization_used=config.localization,
+            perturbation={'enabled': bool(perturb), 'seed': seed}, mode=mode,
             window_years=config.cycle_window_years if mode == 'smoother' else None)
         write_manifest(manifest, staging)
 

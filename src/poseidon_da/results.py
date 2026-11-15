@@ -49,18 +49,17 @@ def export_result(result: AnalysisResult, output_dir) -> dict:
     return {'npz': npz, 'json': out / 'result.json'}
 
 
-def build_manifest(config, result, package_version: str, steps, *, localization_used, perturbation,
-                   dates=None, member_order=None, mode=None, window_years=None, target_time=None) -> dict:
-    """One manifest builder for every operation (analyze / run / diagnose / cycle).
+def build_manifest(config, package_version: str, steps, *, operation, target_time, dates, member_ids,
+                   localization_used, perturbation, diagnostics=None, mode=None, window_years=None) -> dict:
+    """Serialize one operation's manifest from explicit facts (no fallback inference).
 
-    Records versions, config, per-step provenance and input checksums (geometry + each date's
-    measurement file and ensemble states), so a step's inputs are identifiable without storing
-    ensemble copies. `dates`/`member_order` default to the single-window analysis (needs result).
+    The caller passes the operation, its target, dates, member order and diagnostics; this only
+    serializes them and hashes the actually-read inputs (geometry + each date's measurement file
+    and ensemble states), so a step's inputs are identifiable without storing ensemble copies.
     """
     import scipy
 
-    dates = list(dates) if dates is not None else list(config.observation_times)
-    member_order = list(member_order) if member_order is not None else list(result.member_ids)
+    dates, member_ids = list(dates), list(member_ids)
 
     def _h(path):
         try:
@@ -72,14 +71,14 @@ def build_manifest(config, result, package_version: str, steps, *, localization_
               'measurements': {}, 'ensemble': {}}
     for d in dates:
         inputs['measurements'][d] = _h(config.measurements_dir / f'{d}.dat')
-        inputs['ensemble'][d] = {m: _h(config.runs_root / d / m / 'lastconc.xls') for m in member_order}
+        inputs['ensemble'][d] = {m: _h(config.runs_root / d / m / 'lastconc.xls') for m in member_ids}
 
     return {
         'package_version': package_version,
         'schema_version': config.schema_version,
         'case_id': config.case_id,
-        'target_time': target_time if target_time is not None
-        else (result.target if result is not None else config.target_time),
+        'operation': operation,
+        'target_time': target_time,
         'mode': mode,
         'dates': dates,
         'window_years': window_years,
@@ -87,9 +86,9 @@ def build_manifest(config, result, package_version: str, steps, *, localization_
         'bdepths': config.bdepths,
         'localization_used': localization_used,
         'perturbation': perturbation,
-        'member_order': member_order,
+        'member_order': member_ids,
         'library_versions': {'numpy': np.__version__, 'scipy': scipy.__version__},
-        'diagnostics': result.diagnostics if result is not None else None,
+        'diagnostics': diagnostics,
         'inputs': inputs,
         'steps': steps,
     }

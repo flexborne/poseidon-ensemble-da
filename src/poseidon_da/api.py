@@ -27,14 +27,18 @@ def _window(config: Config) -> AnalysisWindow:
                           observation_times=tuple(config.observation_times))
 
 
-def _rng(seed, rng):
+def _rng(seed, rng, perturb):
+    """Finalize the RNG at operation entry: a Generator when perturbing, else None."""
     if rng is not None and seed is not None:
         raise ValueError('pass either seed or rng, not both')
-    if rng is not None:
-        return rng
-    if seed is not None:
-        return np.random.default_rng(seed)
-    return None
+    if not perturb:
+        return None
+    return rng if rng is not None else np.random.default_rng(seed)
+
+
+def _perturbation_meta(seed, rng, perturb):
+    return {'enabled': bool(perturb), 'seed': seed,
+            'rng': 'external (not reconstructible)' if rng is not None else None}
 
 
 def _analyze(config: Config, ctx: RunContext, perturb, rng):
@@ -49,75 +53,58 @@ def analyze(config: Config, *, perturb=True, rng=None, seed=None) -> AnalysisRes
     """Validate the case, compute the analysis, and return the result (no files written)."""
     _require_valid(config)
     ctx = RunContext.isolated(config.runs_root, runs_root=config.runs_root)
-    result, _ = _analyze(config, ctx, perturb, _rng(seed, rng))
+    result, _ = _analyze(config, ctx, perturb, _rng(seed, rng, perturb))
     return result
 
 
-def write_analysis(config: Config, output_dir, *, perturb=True, rng=None, seed=None, force=False) -> RunResult:
-    """Validate, analyze, and publish the analysis export (NPZ/JSON + manifest) atomically.
+def _publish_analysis(config: Config, output_dir, *, include_model_outputs,
+                      perturb, rng, seed, force) -> RunResult:
+    """Shared body of write_analysis/run: validate, analyze, publish atomically.
 
-    The same output-directory safety, non-empty refusal (unless force) and atomic publication
-    as `run`, so an analyze output directory is never a mix of two runs.
+    With include_model_outputs it also writes the restart files and out_<date>.xlsx; otherwise it
+    publishes only the analysis export. Everything is staged and published in one atomic step.
     """
     from . import __version__
-    assert_safe_dest(output_dir, protected_inputs(config))
+    assert_safe_dest(output_dir, protected_inputs(config))          # never overwrite the dataset
     _require_valid(config)
-    rng_obj = _rng(seed, rng)
-    perturbation = {'enabled': bool(perturb), 'seed': seed,
-                    'rng': 'external (not reconstructible)' if rng is not None else None}
+    rng_obj = _rng(seed, rng, perturb)
 
     with staged_publish(output_dir, force) as staging:
         ctx = RunContext.isolated(staging, runs_root=config.runs_root)
-        result, _ = _analyze(config, ctx, perturb, rng_obj)
+        result, payload = _analyze(config, ctx, perturb, rng_obj)
+        steps = [{'step': 'analyze', 'status': 'ok', 'diagnostics': result.diagnostics}]
+        if include_model_outputs:
+            restarts = workflow.write_restarts(result, payload, ctx)
+            steps.append({'step': 'write_restarts', 'status': 'ok', 'count': len(restarts)})
+            workflow.write_outputs(result, payload, ctx)
+            steps.append({'step': 'write_outputs', 'status': 'ok'})
         export_result(result, staging)
-        steps = [{'step': 'analyze', 'status': 'ok', 'diagnostics': result.diagnostics},
-                 {'step': 'export', 'status': 'ok'}]
-        manifest = build_manifest(config, result, __version__, steps,
-                                  localization_used=config.localization, perturbation=perturbation)
+        steps.append({'step': 'export', 'status': 'ok'})
+        manifest = build_manifest(
+            config, __version__, steps, operation='run' if include_model_outputs else 'analyze',
+            target_time=result.target, dates=list(config.observation_times), member_ids=result.member_ids,
+            localization_used=config.localization, perturbation=_perturbation_meta(seed, rng, perturb),
+            diagnostics=result.diagnostics)
         write_manifest(manifest, staging)
 
     out = Path(output_dir)
-    return RunResult(status='ok', steps=steps,
-                     outputs={'npz': str(out / 'analysis.npz'), 'json': str(out / 'result.json'),
-                              'manifest': str(out / 'manifest.json')},
-                     manifest=manifest)
+    outputs = {'npz': str(out / 'analysis.npz'), 'json': str(out / 'result.json'),
+               'manifest': str(out / 'manifest.json')}
+    if include_model_outputs:
+        outputs.update({'restarts_dir': str(out / 'templates'), 'outputs_dir': str(out / 'outputs')})
+    return RunResult(status='ok', steps=steps, outputs=outputs, manifest=manifest)
+
+
+def write_analysis(config: Config, output_dir, *, perturb=True, rng=None, seed=None, force=False) -> RunResult:
+    """Validate, analyze, and publish the analysis export (NPZ/JSON + manifest) atomically."""
+    return _publish_analysis(config, output_dir, include_model_outputs=False,
+                             perturb=perturb, rng=rng, seed=seed, force=force)
 
 
 def run(config: Config, output_dir, *, perturb=True, rng=None, seed=None, force=False) -> RunResult:
-    """Validate, analyze, and materialize restarts + outputs + manifest under output_dir.
-
-    The whole run is built in a staging directory and published atomically on success, so a
-    failure (or an aborted force-run) leaves the previous complete output intact, never a mix.
-    """
-    from . import __version__
-    assert_safe_dest(output_dir, protected_inputs(config))          # never overwrite the dataset (2.1)
-    _require_valid(config)
-    rng_obj = _rng(seed, rng)
-    perturbation = {'enabled': bool(perturb), 'seed': seed,
-                    'rng': 'external (not reconstructible)' if rng is not None else None}
-
-    with staged_publish(output_dir, force) as staging:
-        ctx = RunContext.isolated(staging, runs_root=config.runs_root)
-        steps = []
-        result, payload = _analyze(config, ctx, perturb, rng_obj)
-        steps.append({'step': 'analyze', 'status': 'ok', 'diagnostics': result.diagnostics})
-        restarts = workflow.write_restarts(result, payload, ctx)
-        steps.append({'step': 'write_restarts', 'status': 'ok', 'count': len(restarts)})
-        workflow.write_outputs(result, payload, ctx)
-        steps.append({'step': 'write_outputs', 'status': 'ok'})
-        export_result(result, staging)
-        steps.append({'step': 'export', 'status': 'ok'})
-        manifest = build_manifest(config, result, __version__, steps,
-                                  localization_used=config.localization, perturbation=perturbation)
-        write_manifest(manifest, staging)
-
-    out = Path(output_dir)
-    return RunResult(
-        status='ok', steps=steps,
-        outputs={'restarts_dir': str(out / 'templates'), 'outputs_dir': str(out / 'outputs'),
-                 'npz': str(out / 'analysis.npz'), 'manifest': str(out / 'manifest.json')},
-        manifest=manifest,
-    )
+    """Validate, analyze, and materialize restarts + outputs + manifest under output_dir (atomic)."""
+    return _publish_analysis(config, output_dir, include_model_outputs=True,
+                             perturb=perturb, rng=rng, seed=seed, force=force)
 
 
 def diagnose(config: Config, output_dir, *, date=None, force=False) -> RunResult:
@@ -134,10 +121,10 @@ def diagnose(config: Config, output_dir, *, date=None, force=False) -> RunResult
         obs, members = workflow.write_forecast_diagnostics(config, ctx, date)
         steps = [{'step': 'diagnose', 'date': date, 'status': 'ok',
                   'n_obs': int(obs.shape[0]), 'n_members': len(members)}]
-        manifest = build_manifest(config, None, __version__, steps,
-                                  localization_used=config.localization,
-                                  perturbation={'enabled': False, 'seed': None},
-                                  dates=[date], member_order=members, mode='diagnose', target_time=date)
+        manifest = build_manifest(
+            config, __version__, steps, operation='diagnose', target_time=date,
+            dates=[date], member_ids=members, localization_used=config.localization,
+            perturbation={'enabled': False, 'seed': None}, mode='diagnose')
         write_manifest(manifest, staging)
 
     out = Path(output_dir)

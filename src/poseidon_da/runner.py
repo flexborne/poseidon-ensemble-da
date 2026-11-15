@@ -19,14 +19,11 @@ class RunContext:
     outputs_dir: Path     # where out_<date>.xlsx go
 
     @classmethod
-    def isolated(cls, workdir, runs_root=None) -> "RunContext":
+    def isolated(cls, workdir, runs_root) -> "RunContext":
         """A context whose writable outputs live under workdir (tests / parallel runs)."""
         workdir = Path(workdir)
-        return cls(
-            runs_root=Path(runs_root) if runs_root is not None else paths.RUNS_ROOT,
-            templates_dir=workdir / 'templates',
-            outputs_dir=workdir / 'outputs',
-        )
+        return cls(runs_root=Path(runs_root), templates_dir=workdir / 'templates',
+                   outputs_dir=workdir / 'outputs')
 
     def date_dir(self, strdate: str) -> Path:
         return self.runs_root / strdate

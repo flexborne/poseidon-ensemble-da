@@ -23,9 +23,10 @@ BNLEV = box_levels()
 
 def test_seed_and_rng_mutually_exclusive():
     with pytest.raises(ValueError, match='either seed or rng'):
-        _rng(seed=1, rng=np.random.default_rng(2))
-    assert _rng(seed=3, rng=None) is not None
-    assert _rng(seed=None, rng=None) is None
+        _rng(seed=1, rng=np.random.default_rng(2), perturb=True)
+    assert _rng(seed=3, rng=None, perturb=True) is not None     # perturbing -> a generator
+    assert _rng(seed=None, rng=None, perturb=True) is not None  # fresh generator when perturbing
+    assert _rng(seed=None, rng=None, perturb=False) is None     # not perturbing -> none needed
 
 
 # ---- R5a: geometry with a duplicate box id is rejected ------------------------

@@ -7,17 +7,12 @@ SURFACE_DEPTH_M = 10.0
 
 
 def locate_point3D(slon, slat, sdepth, boxnum, boxlons, boxlats, boxnlev, bdepths):
-    """Box(es) and vertical level a point (lon, lat, depth) falls into.
+    """0-based box indices and the 1-based vertical level a point (lon, lat, depth) falls into.
 
-    Returns bind (0-based box indices), bn (box numbers) and blev (level, 1-based).
-    Rectangle bounds are inclusive, so a point on a shared edge lands in each
-    adjacent box.
+    Rectangle bounds are inclusive, so a point on a shared edge lands in each adjacent box.
     """
-    bind, bn = [], []
-    for i in range(len(boxnum)):
-        if (boxlons[i, 0] <= slon <= boxlons[i, 1]) and (boxlats[i, 0] <= slat <= boxlats[i, 1]):
-            bind.append(i)
-            bn.append(int(boxnum[i]))
+    bind = [i for i in range(len(boxnum))
+            if (boxlons[i, 0] <= slon <= boxlons[i, 1]) and (boxlats[i, 0] <= slat <= boxlats[i, 1])]
     if not bind:
         raise ValueError(f'point (lon={slon}, lat={slat}) is outside the box system')
 
@@ -28,7 +23,7 @@ def locate_point3D(slon, slat, sdepth, boxnum, boxlons, boxlats, boxnlev, bdepth
             break
     if blev == 0:
         blev = int(boxnlev[bind[0]])
-    return bind, bn, blev
+    return bind, blev
 
 
 def aggregate_observations(dat_path, geometry, bdepths, expected_time=None, time_tol=1e-6):
@@ -38,7 +33,7 @@ def aggregate_observations(dat_path, geometry, bdepths, expected_time=None, time
     is the physical time (year); when expected_time is given every row must match it, so a
     mislabelled file is rejected rather than silently relabelled. Raw measured concentrations
     must be finite and positive before box-averaging. Returns a dict with values/brefnum/
-    breflev (p,1 arrays).
+    breflev as 1-D (p,) arrays.
     """
     boxnum, boxlats, boxlons = geometry.boxnum, geometry.boxlats, geometry.boxlons
     boxnlev = geometry.boxnlev
@@ -63,7 +58,7 @@ def aggregate_observations(dat_path, geometry, bdepths, expected_time=None, time
 
     box_st = {(j, k): [] for j in range(Nbox) for k in range(Maxlev)}
     for i in range(Ns):
-        bind, bn, blev = locate_point3D(slon[i], slat[i], SURFACE_DEPTH_M, boxnum, boxlons, boxlats, boxnlev, bdepths)
+        bind, blev = locate_point3D(slon[i], slat[i], SURFACE_DEPTH_M, boxnum, boxlons, boxlats, boxnlev, bdepths)
         if len(bind) > 4:
             raise ValueError(f'measurement {i + 1} belongs to more than 4 boxes')
         for bj in bind:
@@ -80,7 +75,7 @@ def aggregate_observations(dat_path, geometry, bdepths, expected_time=None, time
             values.append(sum(vals) / np.single(len(vals)))
 
     return {
-        'values': np.asarray(values, dtype=float).reshape(-1, 1),
-        'brefnum': np.asarray(brefnum).reshape(-1, 1),
-        'breflev': np.asarray(breflev).reshape(-1, 1),
+        'values': np.asarray(values, dtype=float),
+        'brefnum': np.asarray(brefnum),
+        'breflev': np.asarray(breflev),
     }
