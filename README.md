@@ -44,16 +44,18 @@ importable and runnable from any directory, independent of the source checkout.
 ## Quick start (CLI)
 
 ```bash
-poseidon-da validate examples/black-sea-cs137.toml
-poseidon-da analyze  examples/black-sea-cs137.toml -o results/window-01
-poseidon-da run      examples/black-sea-cs137.toml -o results/run-01
-poseidon-da diagnose examples/black-sea-cs137.toml -o results/check-01
+poseidon-da validate  examples/black-sea-cs137.toml
+poseidon-da analyze   examples/black-sea-cs137.toml -o results/window-01
+poseidon-da run       examples/black-sea-cs137.toml -o results/run-01
+poseidon-da diagnose  examples/black-sea-cs137.toml -o results/check-01
+poseidon-da run-cycle examples/black-sea-cs137.toml -o results/cycle-01 --mode filter
 ```
 
 - **validate** — check the config and inputs; report problems, non-zero exit if invalid.
-- **analyze** — compute the analysis; write `analysis.npz`, `result.json`, `report.xlsx`.
+- **analyze** — compute the analysis; write `analysis.npz` and `result.json`.
 - **run** — analyze + write restart `Initconc.dat` files + `out_<date>.xlsx` + a `manifest.json`.
 - **diagnose** — compare the ensemble forecast against observations (no assimilation).
+- **run-cycle** — sequential NODA/filter assimilation–forecast cycle over a date chain.
 
 Add `--no-perturb` for a deterministic run (observation perturbations set to zero).
 The forecast step itself requires `Poseidon4.exe` (run via `wine` on Linux/macOS); the
@@ -179,18 +181,20 @@ separate and referenced by the case config. Each run writes only to its own outp
 | Module | Responsibility |
 |---|---|
 | `poseidon_da/api.py` | Public API: `load_config`, `analyze`, `run`. |
-| `poseidon_da/cli.py`, `__main__.py` | CLI: `validate`, `analyze`, `run`, `diagnose`. |
+| `poseidon_da/cli.py`, `__main__.py` | CLI: `validate`, `analyze`, `run`, `diagnose`, `run-cycle`. |
 | `poseidon_da/config.py` | Load + validate a case TOML into a `Config`. |
-| `poseidon_da/domain.py` | Typed contracts (`StateLayout`, `ObservationBatch`, `ForecastEnsemble`, `AnalysisWindow`, `AnalysisResult`, `RunResult`). |
-| `poseidon_da/workflow.py` | Assemble inputs, run the shared analysis, write restarts/outputs. |
+| `poseidon_da/domain.py` | Typed contracts (`StateLayout`, `AnalysisWindow`, `AnalysisResult`, `RunResult`). |
+| `poseidon_da/workflow.py` | Assemble inputs, run the shared analysis, write restarts/outputs/diagnostics. |
+| `poseidon_da/cycle.py` | Sequential NODA/filter cycle (plan → forecast → diagnose) with provenance. |
 | `poseidon_da/analysis.py` | `analysis_update` — observation-space Kalman update (Cholesky). |
 | `poseidon_da/covariance.py` | Ensemble covariance + distance localization (H/V/temporal). |
-| `poseidon_da/state.py` | State layout (single/window) + validated `observation_indices`. |
+| `poseidon_da/state.py` | State layout (`build_layout`) + validated `observation_indices`. |
 | `poseidon_da/observations.py` | Geolocation + box-aggregation of raw measurements. |
-| `poseidon_da/geometry.py` | Box levels, localization depths, box centres. |
-| `poseidon_da/poseidon_io.py` | POSEIDON text format read/write + Excel I/O (the only openpyxl user). |
+| `poseidon_da/geometry.py` | Box levels, localization depths, box centres, geometry validation. |
+| `poseidon_da/poseidon_io.py` | POSEIDON text format read/write (with the physical-time contract) + Excel I/O. |
 | `poseidon_da/runner.py` | `RunContext`, executable launcher, file plumbing, run checks. |
-| `poseidon_da/results.py` | Export (NPZ/JSON/XLSX) + manifest. |
+| `poseidon_da/publish.py` | Transactional output: build in staging, publish atomically. |
+| `poseidon_da/results.py` | Export (NPZ/JSON) + manifest. |
 | `poseidon_da/paths.py` | Default repo-relative data locations (overridable by a case). |
 
 ---
@@ -208,4 +212,5 @@ malformed `lastconc.xls`, runner preconditions), Excel I/O, and the config/API/C
 example case. Data-dependent tests skip automatically when the archive is absent; all runs write
 only to an isolated `RunContext`, never into `DAruns/`.
 
-Regenerate the golden reference (deterministic): `python tools/make_reference.py`.
+`python tools/make_reference.py` regenerates *candidate* arrays under `tests/reference/candidate/`
+for review — it does not overwrite the frozen baseline.

@@ -50,21 +50,27 @@ def export_result(result: AnalysisResult, output_dir) -> dict:
 
 
 def build_manifest(config, result: AnalysisResult, package_version: str, steps,
-                   *, localization_used, perturb, seed) -> dict:
-    """Manifest recording versions, normalized config, input checksums and per-step status."""
-    inputs = {}
-    try:
-        inputs['geometry'] = {'path': str(config.geometry), 'sha256': _checksum(config.geometry)}
-    except OSError:
-        pass
-    meas = {}
-    for d in config.observation_times:
-        f = config.measurements_dir / f'{d}.dat'
+                   *, localization_used, perturbation) -> dict:
+    """Manifest recording versions, normalized config, input checksums and per-step status.
+
+    Hashes the actually-read inputs: geometry, the measurement file of each date, and every
+    ensemble state (lastconc.xls) that contributed to the background, so the provenance is
+    sufficient to identify the exact inputs of the run.
+    """
+    import scipy
+
+    def _h(path):
         try:
-            meas[d] = {'path': str(f), 'sha256': _checksum(f)}
+            return _checksum(Path(path))
         except OSError:
-            pass
-    inputs['measurements'] = meas
+            return None
+
+    inputs = {'geometry': {'path': str(config.geometry), 'sha256': _h(config.geometry)},
+              'measurements': {}, 'ensemble': {}}
+    for d in config.observation_times:
+        inputs['measurements'][d] = _h(config.measurements_dir / f'{d}.dat')
+        inputs['ensemble'][d] = {m: _h(config.runs_root / d / m / 'lastconc.xls')
+                                 for m in result.member_ids}
 
     return {
         'package_version': package_version,
@@ -75,8 +81,9 @@ def build_manifest(config, result: AnalysisResult, package_version: str, steps,
         'gsd': config.gsd,
         'bdepths': config.bdepths,
         'localization_used': localization_used,
-        'perturbation': {'enabled': bool(perturb), 'seed': seed},
+        'perturbation': perturbation,
         'member_order': list(result.member_ids),
+        'library_versions': {'numpy': np.__version__, 'scipy': scipy.__version__},
         'diagnostics': result.diagnostics,
         'inputs': inputs,
         'steps': steps,

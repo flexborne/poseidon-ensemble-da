@@ -34,6 +34,25 @@ def box_levels() -> np.ndarray:
     return bnlev
 
 
+def validate_geometry(geometry_path) -> list:
+    """Problems with the geometry workbook: non-integer or duplicate box ids."""
+    try:
+        AAA = load_numeric_excel(geometry_path, sheet_name='Sheet1')
+    except Exception as exc:
+        return [f'cannot read geometry {geometry_path}: {exc}']
+    ids = AAA[:, 0]
+    ids = ids[np.isfinite(ids)]
+    problems = []
+    if np.any(ids != ids.astype(int)):
+        problems.append('geometry: non-integer box id(s)')
+    seen, dups = set(), set()
+    for v in ids.astype(int):
+        (dups.add(int(v)) if v in seen else seen.add(int(v)))
+    if dups:
+        problems.append(f'geometry: duplicate box id(s) {sorted(dups)}')
+    return problems
+
+
 def load_box_centers(geometry_path) -> dict:
     """Return {0-based box index -> (lat, lon)} from the geometry workbook (Sheet1)."""
     AAA = load_numeric_excel(geometry_path, sheet_name='Sheet1')

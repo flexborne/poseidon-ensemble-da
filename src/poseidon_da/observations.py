@@ -55,6 +55,9 @@ def aggregate_observations(dat_path, geometry_path, bdepths, expected_time=None,
     stime, slon, slat, sval = data[:, 0], data[:, 1], data[:, 2], data[:, 3]
     Ns = slon.shape[0]
 
+    if not np.all(np.isfinite(stime)):
+        bad = int(np.where(~np.isfinite(stime))[0][0])
+        raise ValueError(f'{dat_path}: non-finite time at row {bad + 1}')
     if expected_time is not None:
         bad = np.where(np.abs(stime - float(expected_time)) > time_tol)[0]
         if bad.size:

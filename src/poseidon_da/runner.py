@@ -117,18 +117,24 @@ def run_poseidon_all(date_dir, members=None, expected_members=None, exe_path=Non
     bnlev is given it is parsed (structure check) and, when expected_time is given, its
     stamped physical time must match.
     """
-    from .poseidon_io import extract_physical_time, read_poseidon
+    from .poseidon_io import read_poseidon, read_state
 
     date_dir = Path(date_dir)
     if not date_dir.is_dir():
         raise FileNotFoundError(f'run_poseidon_all: date directory does not exist: {date_dir}')
-    members = members or find_members(date_dir)
+    found = find_members(date_dir)
+    if expected_members is not None:
+        # exact set: reject BOTH missing and extra members, run in the declared order
+        if set(found) != set(expected_members):
+            missing = sorted(set(expected_members) - set(found))
+            extra = sorted(set(found) - set(expected_members))
+            raise FileNotFoundError(
+                f'run_poseidon_all: member set mismatch in {date_dir}: missing={missing}, extra={extra}')
+        members = list(expected_members)
+    else:
+        members = members or found
     if not members:
         raise FileNotFoundError(f'run_poseidon_all: no member folders (*hydrol*dep*) in {date_dir}')
-    if expected_members is not None:
-        missing = [m for m in expected_members if m not in members]
-        if missing:
-            raise FileNotFoundError(f'run_poseidon_all: missing expected members in {date_dir}: {missing}')
     for name in members:
         folder = date_dir / name
         if not folder.is_dir():
@@ -139,10 +145,7 @@ def run_poseidon_all(date_dir, members=None, expected_members=None, exe_path=Non
         run_executable_in_dir(folder, exe_path=exe_path, launcher=launcher)
         if not out.exists():
             raise RuntimeError(f'run_poseidon_all: {name} produced no lastconc.xls')
-        if bnlev is not None:
-            _, _, footer, _ = read_poseidon(str(out), bnlev)
-            if expected_time is not None:
-                ptime = extract_physical_time(footer)
-                if ptime is not None and abs(ptime - float(expected_time)) > 1e-6:
-                    raise RuntimeError(
-                        f'run_poseidon_all: {name} output has physical time {ptime}, expected {expected_time}')
+        if bnlev is not None and expected_time is not None:
+            read_state(str(out), bnlev, expected_time=expected_time)   # fresh output must carry the right time
+        elif bnlev is not None:
+            read_poseidon(str(out), bnlev)                             # at least structurally valid

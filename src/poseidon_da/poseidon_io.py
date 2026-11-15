@@ -53,8 +53,11 @@ def read_poseidon(pfile, bnlev, validate=True):
                 if validate and not (np.isfinite(value) and value > 0.0):
                     raise ValueError(f'read_poseidon: non-positive/non-finite concentration for box {nn}, level {j} in {pfile}: {value}')
                 arr[nn - 1, j - 1] = value
-            sed[nn - 1, 0] = float(C[j + 1])
-            sed[nn - 1, 1] = float(C[j + 2])
+            s0, s1 = float(C[j + 1]), float(C[j + 2])
+            if validate and not (np.isfinite(s0) and np.isfinite(s1)):
+                raise ValueError(f'read_poseidon: non-finite sediment value for box {nn} in {pfile}: {s0}, {s1}')
+            sed[nn - 1, 0] = s0
+            sed[nn - 1, 1] = s1
 
     if validate:
         missing = [b for b in range(1, Nbox + 1) if b not in seen]
@@ -73,6 +76,22 @@ def extract_physical_time(footer):
             except ValueError:
                 continue
     return None
+
+
+def read_state(pfile, bnlev, expected_time, time_tol: float = 1e-6):
+    """Read a POSEIDON state and enforce the physical-time contract (one path for all callers).
+
+    Requires a finite stamped physical time that matches `expected_time`; a missing,
+    non-finite or mismatched time is rejected, so a mislabelled directory/file can never
+    pass as data for another date. Returns (arr, header, footer, sed).
+    """
+    arr, header, footer, sed = read_poseidon(pfile, bnlev)
+    t = extract_physical_time(footer)
+    if t is None or not np.isfinite(t):
+        raise ValueError(f'{pfile}: missing or non-finite physical time (expected {expected_time})')
+    if abs(t - float(expected_time)) > time_tol:
+        raise ValueError(f'{pfile}: physical time {t} does not match expected {expected_time}')
+    return arr, header, footer, sed
 
 
 def write_poseidon(fname, vect, Lind, bnlev, header, footer, sed):

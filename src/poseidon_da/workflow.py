@@ -11,7 +11,7 @@ from .covariance import estimate_covariance, localize_covariance
 from .domain import AnalysisResult, AnalysisWindow
 from .geometry import box_levels, layer_depths_from_bdepths, load_box_centers
 from .observations import aggregate_observations
-from .poseidon_io import extract_physical_time, read_poseidon, write_poseidon, xlswrite
+from .poseidon_io import read_state, write_poseidon, xlswrite
 from .runner import RunContext, find_members
 from .state import build_layout, observation_indices, validate_observation_coords
 
@@ -44,7 +44,7 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
     """Run one analysis (a single-date window is the filter). Returns (AnalysisResult, RestartPayload)."""
     rng = rng if rng is not None else np.random.default_rng()
     loc = {**DEFAULT_LOCALIZATION, **(localization or {})}
-    bdepths = list(bdepths or DEFAULT_BDEPTHS)
+    bdepths = list(bdepths) if bdepths is not None else list(DEFAULT_BDEPTHS)
     depb = layer_depths_from_bdepths(bdepths)
     sigma = float(np.log(gsd))
     dates = list(window.observation_times)
@@ -80,10 +80,8 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
     for i, member in enumerate(members):
         per_date = {}
         for k, d in enumerate(dates):
-            arr, header, footer, sed = read_poseidon(str(ctx.date_dir(d) / member / 'lastconc.xls'), bnlev)
-            ptime = extract_physical_time(footer)
-            if ptime is not None and abs(ptime - float(d)) > TIME_TOL:
-                raise ValueError(f'member {member}: state for date {d} has physical time {ptime}')
+            arr, header, footer, sed = read_state(
+                str(ctx.date_dir(d) / member / 'lastconc.xls'), bnlev, expected_time=float(d), time_tol=TIME_TOL)
             per_date[k] = arr
             if k == len(dates) - 1:
                 metas[i] = (header, footer, sed)
@@ -118,9 +116,14 @@ def write_restarts(result: AnalysisResult, payload: RestartPayload, ctx: RunCont
     written = []
     for i, member in enumerate(payload.members):
         header, footer, sed = payload.metas[i]
+        conc = np.exp(sol[anl0:, i])
+        if not np.all(np.isfinite(conc) & (conc > 0.0)):
+            bad = int(np.where(~(np.isfinite(conc) & (conc > 0.0)))[0][0])
+            raise FloatingPointError(
+                f'member {member}: non-finite/non-positive analysed concentration at state row {bad} '
+                f'(value {conc[bad]}) — refusing to write restart')
         ofname = ctx.template_dir(member) / 'Initconc.dat'
-        write_poseidon(str(ofname), np.exp(sol[anl0:, i]), payload.write_index,
-                       payload.bnlev, header, footer, sed)
+        write_poseidon(str(ofname), conc, payload.write_index, payload.bnlev, header, footer, sed)
         written.append(ofname)
     return written
 
@@ -152,7 +155,7 @@ def write_forecast_diagnostics(config, ctx: RunContext, date, bnlev=None):
     ens = np.zeros((No, 1))
     xlswrite(str(ctx.output_xlsx(date)), np.concatenate((obs, brn), axis=1), 'obs')
     for m in members:
-        arr, _, _, _ = read_poseidon(str(ctx.date_dir(date) / m / 'lastconc.xls'), bnlev)
+        arr, _, _, _ = read_state(str(ctx.date_dir(date) / m / 'lastconc.xls'), bnlev, expected_time=float(date))
         sim = np.array([[arr[int(brn[L, 0]) - 1, int(brl[L, 0]) - 1]] for L in range(No)])
         ens += sim
         xlswrite(str(ctx.output_xlsx(date)), sim, m)

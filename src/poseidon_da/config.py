@@ -6,6 +6,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
+
 SUPPORTED_SCHEMA = 1
 
 # Single source of truth for analysis defaults.
@@ -64,7 +66,7 @@ def load_config(path) -> Config:
         target_time=target,
         observation_times=times,
         gsd=float(analysis.get('gsd', DEFAULT_GSD)),
-        bdepths=list(analysis.get('bdepths', DEFAULT_BDEPTHS)),
+        bdepths=list(analysis['bdepths']) if 'bdepths' in analysis else list(DEFAULT_BDEPTHS),
         localization={**DEFAULT_LOCALIZATION, **raw.get('localization', {})},
         model_executable=_resolve(base, exe) if exe else None,
         launcher=list(model.get('launcher', [])),
@@ -93,8 +95,23 @@ def validate(config: Config) -> list:
     for key in ('horizontal_m', 'vertical_m', 'temporal_years'):
         if key in loc and not (math.isfinite(loc[key]) and loc[key] > 0):
             problems.append(f'localization.{key} must be a finite positive value')
+    bd = config.bdepths
+    if not bd:
+        problems.append('analysis.bdepths must be a non-empty list')
+    elif not all(isinstance(x, (int, float)) and math.isfinite(x) for x in bd):
+        problems.append('analysis.bdepths must be finite numbers')
+    elif any(bd[i] >= bd[i + 1] for i in range(len(bd) - 1)):
+        problems.append(f'analysis.bdepths must be strictly increasing (got {bd})')
+    else:
+        from .geometry import box_levels
+        need = int(np.max(box_levels()))
+        if len(bd) < need:
+            problems.append(f'analysis.bdepths needs at least {need} entries (got {len(bd)})')
     if not config.geometry.exists():
         problems.append(f'geometry file not found: {config.geometry}')
+    else:
+        from .geometry import validate_geometry
+        problems += validate_geometry(config.geometry)
     if not config.measurements_dir.is_dir():
         problems.append(f'measurements_dir not found: {config.measurements_dir}')
     for d in config.observation_times:

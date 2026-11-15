@@ -45,15 +45,17 @@ pip install .            # або: pip install -e .   (editable, для розр
 
 ```bash
 poseidon-da validate examples/black-sea-cs137.toml
-poseidon-da analyze  examples/black-sea-cs137.toml -o results/window-01
-poseidon-da run      examples/black-sea-cs137.toml -o results/run-01
-poseidon-da diagnose examples/black-sea-cs137.toml -o results/check-01
+poseidon-da analyze   examples/black-sea-cs137.toml -o results/window-01
+poseidon-da run       examples/black-sea-cs137.toml -o results/run-01
+poseidon-da diagnose  examples/black-sea-cs137.toml -o results/check-01
+poseidon-da run-cycle examples/black-sea-cs137.toml -o results/cycle-01 --mode filter
 ```
 
 - **validate** — перевірити конфіг і входи; вивести проблеми, ненульовий код при помилці.
-- **analyze** — обчислити аналіз; записати `analysis.npz`, `result.json`, `report.xlsx`.
+- **analyze** — обчислити аналіз; записати `analysis.npz` і `result.json`.
 - **run** — аналіз + файли перезапуску `Initconc.dat` + `out_<date>.xlsx` + `manifest.json`.
 - **diagnose** — порівняти прогноз ансамблю зі спостереженнями (без засвоєння).
+- **run-cycle** — послідовний цикл NODA/filter аналіз–прогноз по ланцюгу дат.
 
 Прапорець `--no-perturb` — детермінований прогон (збурення спостережень = 0). Крок прогнозу
 потребує `Poseidon4.exe` (через `wine` на Linux/macOS); команди аналізу — ні.
@@ -146,8 +148,8 @@ launcher   = ["wine"]
 статус кроків у `manifest.json`.
 
 Регресійний тест ([tests/test_regression.py](tests/test_regression.py)) звіряє розв'язувач із
-збереженими еталонними масивами в `tests/reference/`; `tools/make_reference.py` відтворює їх
-детерміновано.
+збереженими еталонними масивами в `tests/reference/`; `tools/make_reference.py` формує
+*candidate* для перегляду, не перезаписуючи baseline.
 
 ---
 
@@ -176,18 +178,20 @@ poseidon-ensemble-da/
 | Модуль | Призначення |
 |---|---|
 | `poseidon_da/api.py` | Публічний API: `load_config`, `analyze`, `run`. |
-| `poseidon_da/cli.py`, `__main__.py` | CLI: `validate`, `analyze`, `run`, `diagnose`. |
+| `poseidon_da/cli.py`, `__main__.py` | CLI: `validate`, `analyze`, `run`, `diagnose`, `run-cycle`. |
 | `poseidon_da/config.py` | Завантаження + валідація TOML у `Config`. |
-| `poseidon_da/domain.py` | Типи-контракти (`StateLayout`, `ObservationBatch`, `ForecastEnsemble`, `AnalysisWindow`, `AnalysisResult`, `RunResult`). |
-| `poseidon_da/workflow.py` | Збирає входи, запускає спільний аналіз, пише перезапуски/виходи. |
+| `poseidon_da/domain.py` | Типи-контракти (`StateLayout`, `AnalysisWindow`, `AnalysisResult`, `RunResult`). |
+| `poseidon_da/workflow.py` | Збирає входи, запускає спільний аналіз, пише перезапуски/виходи/діагностику. |
+| `poseidon_da/cycle.py` | Послідовний цикл NODA/filter (план → прогноз → діагностика) з походженням. |
 | `poseidon_da/analysis.py` | `analysis_update` — оновлення Калмана у просторі спостережень (Холецький). |
 | `poseidon_da/covariance.py` | Ансамблева коваріація + локалізація за відстанню (H/V/час). |
-| `poseidon_da/state.py` | Розмітка стану (одна дата/вікно) + валідований `observation_indices`. |
+| `poseidon_da/state.py` | Розмітка стану (`build_layout`) + валідований `observation_indices`. |
 | `poseidon_da/observations.py` | Геолокація + усереднення сирих вимірювань по боксах. |
-| `poseidon_da/geometry.py` | Рівні боксів, глибини локалізації, центри боксів. |
-| `poseidon_da/poseidon_io.py` | Читання/запис формату POSEIDON + Excel (єдиний модуль з openpyxl). |
+| `poseidon_da/geometry.py` | Рівні боксів, глибини локалізації, центри боксів, валідація геометрії. |
+| `poseidon_da/poseidon_io.py` | Читання/запис формату POSEIDON (із контрактом фізичного часу) + Excel. |
 | `poseidon_da/runner.py` | `RunContext`, запуск `.exe`, копіювання файлів, перевірки прогону. |
-| `poseidon_da/results.py` | Експорт (NPZ/JSON/XLSX) + manifest. |
+| `poseidon_da/publish.py` | Транзакційний вихід: збірка в staging, атомарна публікація. |
+| `poseidon_da/results.py` | Експорт (NPZ/JSON) + manifest. |
 | `poseidon_da/paths.py` | Типові шляхи до даних (можна перевизначити конфігом). |
 
 ---
@@ -204,4 +208,5 @@ pytest -q
 `lastconc.xls`, передумови runner'а), Excel I/O та конфіг/API/CLI на прикладі. Тести, що
 потребують архіву, пропускаються без нього; усі прогони пишуть лише в ізольований `RunContext`.
 
-Регенерація еталонів (детерміновано): `python tools/make_reference.py`.
+`python tools/make_reference.py` формує *candidate*-масиви в `tests/reference/candidate/` для
+перегляду — заморожений baseline не перезаписується.
