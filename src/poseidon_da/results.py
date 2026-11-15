@@ -19,7 +19,7 @@ def _checksum(path: Path) -> str:
 
 
 def export_result(result: AnalysisResult, output_dir) -> dict:
-    """Write NPZ arrays (with physical coordinates), a JSON summary and an XLSX report."""
+    """Write analysis.npz (arrays with physical coordinates) and result.json (summary)."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 

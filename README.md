@@ -52,13 +52,14 @@ poseidon-da run-cycle examples/black-sea-cs137.toml -o results/cycle-01 --mode f
 ```
 
 - **validate** — check the config and inputs; report problems, non-zero exit if invalid.
-- **analyze** — compute the analysis; write `analysis.npz` and `result.json`.
+- **analyze** — compute the analysis; write `analysis.npz`, `result.json` and a `manifest.json`.
 - **run** — analyze + write restart `Initconc.dat` files + `out_<date>.xlsx` + a `manifest.json`.
 - **diagnose** — compare the ensemble forecast against observations (no assimilation).
 - **run-cycle** — sequential assimilation–forecast cycle over a date chain (`--mode noda|filter|smoother`; smoother uses ±`window_years` neighbour windows).
 
-Add `--no-perturb` for a deterministic run (observation perturbations set to zero).
-The analysis commands do not need the model. The forecast step (`run-cycle`) runs
+Every writing command publishes atomically and refuses a non-empty output directory unless
+`--force` is given; `--no-perturb` makes a deterministic run (observation perturbations set to
+zero). The analysis commands do not need the model. The forecast step (`run-cycle`) runs
 `Poseidon4.exe`; set `[model]` in the case — `launcher = ["wine"]` on Linux/macOS (empty on
 Windows) and `use_pty = true`, because POSEIDON is a console Fortran app and headless `wine`
 needs a pseudo-terminal.
@@ -183,22 +184,23 @@ separate and referenced by the case config. Each run writes only to its own outp
 
 | Module | Responsibility |
 |---|---|
-| `poseidon_da/api.py` | Public API: `load_config`, `analyze`, `run`. |
+| `poseidon_da/api.py` | Public API: `load_config`, `analyze`, `write_analysis`, `run`, `diagnose`, `run_cycle`. |
 | `poseidon_da/cli.py`, `__main__.py` | CLI: `validate`, `analyze`, `run`, `diagnose`, `run-cycle`. |
 | `poseidon_da/config.py` | Load + validate a case TOML into a `Config`. |
 | `poseidon_da/domain.py` | Typed contracts (`StateLayout`, `AnalysisWindow`, `AnalysisResult`, `RunResult`). |
 | `poseidon_da/workflow.py` | Assemble inputs, run the shared analysis, write restarts/outputs/diagnostics. |
-| `poseidon_da/cycle.py` | Sequential NODA/filter cycle (plan → forecast → diagnose) with provenance. |
+| `poseidon_da/cycle.py` | NODA/filter/smoother cycle: one planner + one executor, with provenance. |
 | `poseidon_da/analysis.py` | `analysis_update` — observation-space Kalman update (Cholesky). |
 | `poseidon_da/covariance.py` | Ensemble covariance + distance localization (H/V/temporal). |
 | `poseidon_da/state.py` | State layout (`build_layout`) + validated `observation_indices`. |
 | `poseidon_da/observations.py` | Geolocation + box-aggregation of raw measurements. |
-| `poseidon_da/geometry.py` | Box levels, localization depths, box centres, geometry validation. |
+| `poseidon_da/geometry.py` | Box levels, localization depths, and the `Geometry` object (read once). |
+| `poseidon_da/physical.py` | Log→physical conversion: guarded `exp`, geometric/arithmetic means. |
 | `poseidon_da/poseidon_io.py` | POSEIDON text format read/write (with the physical-time contract) + Excel I/O. |
 | `poseidon_da/runner.py` | `RunContext`, executable launcher, file plumbing, run checks. |
 | `poseidon_da/publish.py` | Transactional output: build in staging, publish atomically. |
 | `poseidon_da/results.py` | Export (NPZ/JSON) + manifest. |
-| `poseidon_da/paths.py` | Default repo-relative data locations (overridable by a case). |
+| `poseidon_da/paths.py` | Repo-relative data locations (dev/test fallback; a case overrides them). |
 
 ---
 

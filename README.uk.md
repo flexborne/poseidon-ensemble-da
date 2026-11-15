@@ -52,13 +52,14 @@ poseidon-da run-cycle examples/black-sea-cs137.toml -o results/cycle-01 --mode f
 ```
 
 - **validate** — перевірити конфіг і входи; вивести проблеми, ненульовий код при помилці.
-- **analyze** — обчислити аналіз; записати `analysis.npz` і `result.json`.
+- **analyze** — обчислити аналіз; записати `analysis.npz`, `result.json` і `manifest.json`.
 - **run** — аналіз + файли перезапуску `Initconc.dat` + `out_<date>.xlsx` + `manifest.json`.
 - **diagnose** — порівняти прогноз ансамблю зі спостереженнями (без засвоєння).
 - **run-cycle** — послідовний цикл аналіз–прогноз по ланцюгу дат (`--mode noda|filter|smoother`; згладжувач використовує вікна ±`window_years`).
 
-Прапорець `--no-perturb` — детермінований прогон (збурення спостережень = 0). Команди аналізу
-моделі не потребують. Крок прогнозу (`run-cycle`) запускає `Poseidon4.exe`; у секції `[model]`
+Кожна команда запису публікує результат атомарно й відмовляється перезаписувати непорожній
+каталог без `--force`; `--no-perturb` — детермінований прогон (збурення спостережень = 0).
+Команди аналізу моделі не потребують. Крок прогнозу (`run-cycle`) запускає `Poseidon4.exe`; у секції `[model]`
 задайте `launcher = ["wine"]` на Linux/macOS (порожній на Windows) і `use_pty = true`, бо
 POSEIDON — консольний Fortran-застосунок і headless-`wine` потребує псевдотермінала.
 
@@ -180,22 +181,23 @@ poseidon-ensemble-da/
 
 | Модуль | Призначення |
 |---|---|
-| `poseidon_da/api.py` | Публічний API: `load_config`, `analyze`, `run`. |
+| `poseidon_da/api.py` | Публічний API: `load_config`, `analyze`, `write_analysis`, `run`, `diagnose`, `run_cycle`. |
 | `poseidon_da/cli.py`, `__main__.py` | CLI: `validate`, `analyze`, `run`, `diagnose`, `run-cycle`. |
 | `poseidon_da/config.py` | Завантаження + валідація TOML у `Config`. |
 | `poseidon_da/domain.py` | Типи-контракти (`StateLayout`, `AnalysisWindow`, `AnalysisResult`, `RunResult`). |
 | `poseidon_da/workflow.py` | Збирає входи, запускає спільний аналіз, пише перезапуски/виходи/діагностику. |
-| `poseidon_da/cycle.py` | Послідовний цикл NODA/filter (план → прогноз → діагностика) з походженням. |
+| `poseidon_da/cycle.py` | Цикл NODA/filter/smoother: один планувальник + один виконавець, з походженням. |
 | `poseidon_da/analysis.py` | `analysis_update` — оновлення Калмана у просторі спостережень (Холецький). |
 | `poseidon_da/covariance.py` | Ансамблева коваріація + локалізація за відстанню (H/V/час). |
 | `poseidon_da/state.py` | Розмітка стану (`build_layout`) + валідований `observation_indices`. |
 | `poseidon_da/observations.py` | Геолокація + усереднення сирих вимірювань по боксах. |
-| `poseidon_da/geometry.py` | Рівні боксів, глибини локалізації, центри боксів, валідація геометрії. |
+| `poseidon_da/geometry.py` | Рівні боксів, глибини локалізації та об'єкт `Geometry` (читається один раз). |
+| `poseidon_da/physical.py` | Перетворення log→фізичне: захищений `exp`, геометричне/арифметичне середнє. |
 | `poseidon_da/poseidon_io.py` | Читання/запис формату POSEIDON (із контрактом фізичного часу) + Excel. |
 | `poseidon_da/runner.py` | `RunContext`, запуск `.exe`, копіювання файлів, перевірки прогону. |
 | `poseidon_da/publish.py` | Транзакційний вихід: збірка в staging, атомарна публікація. |
 | `poseidon_da/results.py` | Експорт (NPZ/JSON) + manifest. |
-| `poseidon_da/paths.py` | Типові шляхи до даних (можна перевизначити конфігом). |
+| `poseidon_da/paths.py` | Шляхи до даних (запасні, для dev/тестів; конфіг їх перевизначає). |
 
 ---
 

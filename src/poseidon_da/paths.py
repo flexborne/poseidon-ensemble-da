@@ -1,4 +1,4 @@
-"""Default data locations (repo-relative). A case config can override all of these."""
+"""Repo-relative data locations: a dev/test fallback. Working runs get paths from the case."""
 from __future__ import annotations
 
 from pathlib import Path
