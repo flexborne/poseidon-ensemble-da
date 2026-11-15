@@ -21,6 +21,22 @@ by routine regeneration — a future bug could otherwise be "blessed" into the e
 The current observation-space solver reproduces these arrays within least-squares's convergence
 tolerance (~1e-6), checked by `tests/test_regression.py`.
 
+## checked against the original the model (performed)
+
+Using `tools/model_dump.m` (original the model functions, perturbations zeroed) +
+`tools/compare_model_dump.py` on identical inputs (the model tree at
+`DAwork/DAruns.Sasha/01.RunKFS`), the model R2026b vs the Python implementation:
+
+| quantity | filter 1986.75 | smoother [1988.625,1988.5] |
+|---|---|---|
+| y   | 3.7e-8  | 4.6e-8  |
+| Xf  | 5.3e-15 | 5.3e-15 |
+| B   | 4.4e-16 | 8.3e-17 |
+| sol | 1.4e-6  | 2.9e-7  |
+
+y/Xf/B match to machine precision; `sol` matches to the model's iterative-least-squares tolerance
+(the Python solver is the exact minimizer of the same problem).
+
 ## Regeneration (does NOT overwrite this baseline)
 
 `python tools/make_reference.py` writes **candidate** arrays to `tests/reference/candidate/`

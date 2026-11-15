@@ -143,19 +143,27 @@ the last/target date).
 
 ## check
 
-**What this repository verifies today.** The observation-space solver reproduces the **frozen
-golden arrays of the previous Python solver** (filter `1986.75` and smoother `[1988.625, 1988.5]`,
-perturbations zeroed) within least-squares's convergence tolerance (~1e-6) — see
-[tests/test_regression.py](tests/test_regression.py) and the origin of the baseline in
-[tests/reference/PROVENANCE.md](tests/reference/PROVENANCE.md). The new solver replaces the
-earlier explicit `B⁻¹` + LDL + per-member least-squares and is the exact least-squares minimizer of the
-same quadratic problem.
+**checked against the original the model.** Running the original the model functions
+([tools/model_dump.m](tools/model_dump.m), perturbations zeroed) on identical inputs and
+comparing with the Python implementation ([tools/compare_model_dump.py](tools/compare_model_dump.py))
+gives, for the filter (`1986.75`) and smoother (`[1988.625, 1988.5]`):
 
-**What is not yet reproduced here.** The code is a function-by-function implementation of a the model
-workflow, but a direct **the model-vs-Python** comparison is **not** part of this repository: the
-only `.m` file present uses a different formulation (linear concentrations + `nnls`).
-Establishing the model equivalence of the current log-method would require the original
-implementation or its saved intermediate arrays (`Xf, B, H, R, Y, Xa`).
+| quantity | max abs. difference | meaning |
+|---|---|---|
+| `y` observations | ≤ 4.6×10⁻⁸ | single-precision box averaging |
+| `Xf` ensemble log-states | 5.3×10⁻¹⁵ | machine precision |
+| `B` localized covariance | ≤ 4.4×10⁻¹⁶ | machine precision |
+| `sol` analysis | ≤ 1.4×10⁻⁶ | = the model's iterative-least-squares tolerance |
+
+The front end, ensemble read, covariance and localization match the model **to machine precision**;
+the `sol` gap is exactly the model's least-squares under-convergence — the Python observation-space solver is
+the exact minimizer of the same quadratic problem (it replaces the explicit `B⁻¹` + LDL +
+per-member least-squares). Reproduce with `model_dump.m` (in the model) + `compare_model_dump.py`.
+
+**Also checked:** the Python solver reproduces the frozen golden arrays within ~1e-6
+([tests/test_regression.py](tests/test_regression.py), baseline described in
+[tests/reference/PROVENANCE.md](tests/reference/PROVENANCE.md)); and `read_poseidon`→`write_poseidon`
+round-trips reproduce the the model restart-file body byte-for-byte.
 
 **Randomness.** The only stochastic element is the observation perturbations; `--no-perturb`
 makes a run deterministic and reproducible within Python (fixed `--seed`). Zeroing the
