@@ -1,9 +1,12 @@
 """Case configuration: load and validate a TOML file into a typed Config."""
 from __future__ import annotations
 
+import math
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+SUPPORTED_SCHEMA = 1
 
 
 @dataclass
@@ -63,6 +66,8 @@ def load_config(path) -> Config:
 def validate(config: Config) -> list:
     """Return a list of human-readable problems; empty means the case is runnable."""
     problems = []
+    if config.schema_version != SUPPORTED_SCHEMA:
+        problems.append(f'unsupported schema_version {config.schema_version} (supported: {SUPPORTED_SCHEMA})')
     if not config.target_time:
         problems.append('analysis.target_time is required')
     if not config.observation_times:
@@ -71,12 +76,12 @@ def validate(config: Config) -> list:
         problems.append('analysis.target_time must be the last of observation_times')
     if len(set(config.observation_times)) != len(config.observation_times):
         problems.append('analysis.observation_times contains duplicates')
-    if not (config.gsd > 1.0):
-        problems.append(f'analysis.gsd must be > 1 (got {config.gsd})')
+    if not (math.isfinite(config.gsd) and config.gsd > 1.0):
+        problems.append(f'analysis.gsd must be a finite value > 1 (got {config.gsd})')
     loc = config.localization
     for key in ('horizontal_m', 'vertical_m', 'temporal_years'):
-        if key in loc and not (loc[key] > 0):
-            problems.append(f'localization.{key} must be positive')
+        if key in loc and not (math.isfinite(loc[key]) and loc[key] > 0):
+            problems.append(f'localization.{key} must be a finite positive value')
     if not config.geometry.exists():
         problems.append(f'geometry file not found: {config.geometry}')
     if not config.measurements_dir.is_dir():
@@ -85,10 +90,9 @@ def validate(config: Config) -> list:
         f = config.measurements_dir / f'{d}.dat'
         if not f.exists():
             problems.append(f'missing measurement file: {f}')
-    if config.target_time:
-        tdir = config.runs_root / config.target_time
-        if not tdir.is_dir():
-            problems.append(f'target run directory not found: {tdir}')
-        elif not sorted(tdir.glob('*hydrol*dep*')):
-            problems.append(f'no ensemble member folders in {tdir}')
+        ddir = config.runs_root / d
+        if not ddir.is_dir():
+            problems.append(f'run directory not found for observation date {d}: {ddir}')
+        elif not sorted(ddir.glob('*hydrol*dep*')):
+            problems.append(f'no ensemble member folders in {ddir}')
     return problems

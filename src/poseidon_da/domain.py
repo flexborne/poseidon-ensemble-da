@@ -69,15 +69,29 @@ class AnalysisWindow:
 
 @dataclass
 class AnalysisResult:
-    """Structured result of one analysis step (no file side effects)."""
+    """Structured result of one analysis step (no file side effects).
+
+    Every state row carries explicit physical coordinates (box_id, layer_id, time),
+    and both the geometric and arithmetic ensemble means are provided under explicit
+    names so callers never have to guess which statistic they are looking at.
+    """
 
     target: str
     member_ids: list
     obs_indices: np.ndarray
-    observations: np.ndarray      # (p,) assimilated values, log-space
-    log_states: np.ndarray        # (n, M) per-member analysis, log-space
-    concentrations: np.ndarray    # (n, M) = exp(log_states)
-    geometric_mean: np.ndarray    # (n,) = exp(mean(log_states, axis=1))
+    observations: np.ndarray        # (p,) assimilated values, log-space
+    log_states: np.ndarray          # (n, M) per-member analysis, log-space
+    concentrations: np.ndarray      # (n, M) = exp(log_states)
+    geometric_mean: np.ndarray      # (n,) = exp(mean(log_states, axis=1))
+    arithmetic_mean: np.ndarray     # (n,) = mean(concentrations, axis=1)
+    # physical coordinates of each state row
+    box_id: np.ndarray              # (n,) 1-based box numbers
+    layer_id: np.ndarray            # (n,) 1-based levels
+    time: np.ndarray                # (n,) physical time of each state row
+    # physical coordinates of each observation
+    obs_box_id: np.ndarray          # (p,)
+    obs_layer_id: np.ndarray        # (p,)
+    obs_time: np.ndarray            # (p,)
     diagnostics: dict = field(default_factory=dict)
 
 

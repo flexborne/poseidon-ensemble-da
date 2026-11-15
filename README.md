@@ -143,17 +143,24 @@ the last/target date).
 
 ## check
 
-converted from the model function-by-function. The only randomness is the **observation
-perturbations**; because the model and NumPy RNGs differ, check was done with the
-**perturbations zeroed in both programs**, which makes both fully deterministic — and they
-produced **identical results**, confirming the computational core.
+**What this repository verifies today.** The observation-space solver reproduces the **frozen
+golden arrays of the previous Python solver** (filter `1986.75` and smoother `[1988.625, 1988.5]`,
+perturbations zeroed) within least-squares's convergence tolerance (~1e-6) — see
+[tests/test_regression.py](tests/test_regression.py) and the origin of the baseline in
+[tests/reference/PROVENANCE.md](tests/reference/PROVENANCE.md). The new solver replaces the
+earlier explicit `B⁻¹` + LDL + per-member least-squares and is the exact least-squares minimizer of the
+same quadratic problem.
 
-The observation-space solver replaces the earlier explicit `B⁻¹` + LDL + per-member least-squares. It is
-the exact least-squares minimizer, so it reproduces the previous result within least-squares's convergence
-tolerance (~1e-6), checked against golden arrays in `tests/reference/`.
+**What is not yet reproduced here.** The code is a function-by-function implementation of a the model
+workflow, but a direct **the model-vs-Python** comparison is **not** part of this repository: the
+only `.m` file present uses a different formulation (linear concentrations + `nnls`).
+Establishing the model equivalence of the current log-method would require the original
+implementation or its saved intermediate arrays (`Xf, B, H, R, Y, Xa`).
 
-> In production runs perturbations are left random; the result is reproducible within Python
-> (fixed seed) but not bit-for-bit identical to the model.
+**Randomness.** The only stochastic element is the observation perturbations; `--no-perturb`
+makes a run deterministic and reproducible within Python (fixed `--seed`). Zeroing the
+perturbations is *not* a square-root EnKF — it does not add the `K R Kᵀ` correction to the
+analysis-ensemble covariance.
 
 ---
 

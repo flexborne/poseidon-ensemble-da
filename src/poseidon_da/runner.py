@@ -108,8 +108,17 @@ def run_executable_in_dir(directory, exe_path=None, launcher=None) -> None:
         raise RuntimeError(f'{exe_path.name} failed in {directory} with exit code {result.returncode}')
 
 
-def run_poseidon_all(date_dir, members=None, expected_members=None, exe_path=None, launcher=None) -> None:
-    """Run POSEIDON in every member folder of a date, with existence/output checks."""
+def run_poseidon_all(date_dir, members=None, expected_members=None, exe_path=None,
+                     launcher=None, expected_time=None, bnlev=None) -> None:
+    """Run POSEIDON in every member folder of a date, verifying a FRESH output.
+
+    Any pre-existing lastconc.xls is removed before the run, so a stale file can never
+    be mistaken for the new forecast. After the run the output must reappear; when
+    bnlev is given it is parsed (structure check) and, when expected_time is given, its
+    stamped physical time must match.
+    """
+    from .poseidon_io import extract_physical_time, read_poseidon
+
     date_dir = Path(date_dir)
     if not date_dir.is_dir():
         raise FileNotFoundError(f'run_poseidon_all: date directory does not exist: {date_dir}')
@@ -124,6 +133,16 @@ def run_poseidon_all(date_dir, members=None, expected_members=None, exe_path=Non
         folder = date_dir / name
         if not folder.is_dir():
             raise FileNotFoundError(f'run_poseidon_all: member folder missing: {folder}')
+        out = folder / 'lastconc.xls'
+        if out.exists():
+            out.unlink()                       # never treat a previous output as this run's result
         run_executable_in_dir(folder, exe_path=exe_path, launcher=launcher)
-        if not (folder / 'lastconc.xls').exists():
+        if not out.exists():
             raise RuntimeError(f'run_poseidon_all: {name} produced no lastconc.xls')
+        if bnlev is not None:
+            _, _, footer, _ = read_poseidon(str(out), bnlev)
+            if expected_time is not None:
+                ptime = extract_physical_time(footer)
+                if ptime is not None and abs(ptime - float(expected_time)) > 1e-6:
+                    raise RuntimeError(
+                        f'run_poseidon_all: {name} output has physical time {ptime}, expected {expected_time}')

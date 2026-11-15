@@ -1,6 +1,8 @@
 """Input-contract tests: malformed state files and runner preconditions must fail loudly."""
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 import pytest
 
@@ -71,6 +73,58 @@ def test_read_poseidon_rejects_nonpositive_concentration(tmp_path):
     bad.write_text(''.join(bad_lines))
     with pytest.raises(ValueError, match='non-positive'):
         read_poseidon(str(bad), BNLEV)
+
+
+@requires_data
+@pytest.mark.parametrize('bad_first_token', ['-1', '1.9'])
+def test_read_poseidon_rejects_invalid_box_id(tmp_path, bad_first_token):
+    lines = _data_lines(a_lastconc())
+    bad = tmp_path / 'lastconc.xls'
+    bad.write_text(''.join(lines) + f'{bad_first_token} 999 888 777\n')
+    with pytest.raises(ValueError, match='invalid box id'):
+        read_poseidon(str(bad), BNLEV)
+
+
+@requires_data
+def test_aggregate_rejects_mislabelled_time(tmp_path):
+    from poseidon_da.observations import aggregate_observations
+    from poseidon_da.paths import box_surfareas_with_centers_path, MEASUREMENTS_DIR
+    src = (MEASUREMENTS_DIR / '1987.5.dat').read_text().splitlines()
+    patched = [src[0]] + ['\t'.join(['1999'] + ln.split('\t')[1:]) for ln in src[1:] if ln.strip()]
+    dat = tmp_path / '1987.5.dat'
+    dat.write_text('\n'.join(patched) + '\n')
+    with pytest.raises(ValueError, match='time column'):
+        aggregate_observations(str(dat), str(box_surfareas_with_centers_path()),
+                               [25, 100, 500, 2000], expected_time=1987.5)
+
+
+@requires_data
+def test_aggregate_rejects_nonpositive_raw(tmp_path):
+    from poseidon_da.observations import aggregate_observations
+    from poseidon_da.paths import box_surfareas_with_centers_path, MEASUREMENTS_DIR
+    src = (MEASUREMENTS_DIR / '1987.5.dat').read_text().splitlines()
+    rows = [ln for ln in src[1:] if ln.strip()]
+    cols = rows[0].split('\t')
+    cols[3] = '-1'
+    rows[0] = '\t'.join(cols)
+    dat = tmp_path / '1987.5.dat'
+    dat.write_text('\n'.join([src[0]] + rows) + '\n')
+    with pytest.raises(ValueError, match='non-positive'):
+        aggregate_observations(str(dat), str(box_surfareas_with_centers_path()),
+                               [25, 100, 500, 2000], expected_time=1987.5)
+
+
+def test_run_poseidon_all_does_not_accept_stale_output(tmp_path):
+    # A stale lastconc.xls must not be mistaken for a fresh forecast: the runner deletes
+    # it first, so a no-op "model" leaves no output and the run fails.
+    member = tmp_path / '01.hydrol1dep1'
+    member.mkdir()
+    (member / 'lastconc.xls').write_text('stale data, not a model output\n')
+    dummy_exe = tmp_path / 'fake.exe'
+    dummy_exe.write_text('')
+    with pytest.raises(RuntimeError, match='no lastconc'):
+        run_poseidon_all(tmp_path, exe_path=dummy_exe, launcher=[sys.executable, '-c', 'pass'])
+    assert not (member / 'lastconc.xls').exists()   # stale output was removed
 
 
 def test_run_poseidon_all_rejects_missing_dir(tmp_path):

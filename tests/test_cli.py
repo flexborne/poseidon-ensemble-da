@@ -34,11 +34,64 @@ def test_api_analyze_runs(tmp_path):
 
 @requires_data
 def test_api_run_writes_outputs_and_manifest(tmp_path):
+    import json
     config = load_config(EXAMPLE_CASE)
-    res = api.run(config, tmp_path, perturb=False)
+    out = tmp_path / 'run'
+    res = api.run(config, out, perturb=False)
     assert res.status == 'ok'
-    assert (tmp_path / 'manifest.json').exists()
-    assert (tmp_path / 'analysis.npz').exists()
-    # restarts written for every member
-    restarts = list((tmp_path / 'templates').glob('*hydrol*dep*/Initconc.dat'))
+    assert (out / 'manifest.json').exists()
+    assert (out / 'analysis.npz').exists()
+    restarts = list((out / 'templates').glob('*hydrol*dep*/Initconc.dat'))
     assert len(restarts) == 24
+    # manifest records perturbation mode, effective localization and input checksums
+    man = json.loads((out / 'manifest.json').read_text())
+    assert man['perturbation']['enabled'] is False
+    assert man['localization_used']['horizontal_m'] == 100000.0
+    assert man['inputs']['geometry']['sha256']
+
+
+@requires_data
+def test_api_run_refuses_dirty_output_dir(tmp_path):
+    config = load_config(EXAMPLE_CASE)
+    (tmp_path / 'leftover.txt').write_text('x')
+    with pytest.raises(FileExistsError):
+        api.run(config, tmp_path, perturb=False)
+
+
+@requires_data
+def test_result_has_physical_coordinates(tmp_path):
+    config = load_config(EXAMPLE_CASE)
+    r = api.analyze(config, perturb=False, output_dir=tmp_path)
+    n = r.log_states.shape[0]
+    assert r.box_id.shape == (n,) and r.layer_id.shape == (n,) and r.time.shape == (n,)
+    assert r.obs_box_id.shape == r.observations.shape
+    assert r.arithmetic_mean.shape == (n,) and r.geometric_mean.shape == (n,)
+
+
+@requires_data
+@pytest.mark.parametrize('bad', [
+    {'gsd': 1.0},
+    {'gsd': float('inf')},
+    {'observation_times': ['1988.5', '1988.5'], 'target_time': '1988.5'},
+    {'schema_version': 999},
+])
+def test_api_rejects_invalid_config(bad):
+    config = load_config(EXAMPLE_CASE)
+    for k, v in bad.items():
+        setattr(config, k, v)
+    with pytest.raises(ValueError):
+        api.analyze(config, perturb=False)
+
+
+@requires_data
+def test_api_analyze_accepts_numpy_generator(tmp_path):
+    import numpy as np
+    config = load_config(EXAMPLE_CASE)
+    # must not raise AttributeError on a modern Generator
+    r = api.analyze(config, perturb=True, rng=np.random.default_rng(0), output_dir=tmp_path)
+    assert np.all(np.isfinite(r.log_states))
+
+
+def test_layer_depths_from_bdepths_default():
+    from poseidon_da.geometry import layer_depths_from_bdepths
+    assert layer_depths_from_bdepths([25, 100, 500, 2000]) == [12.5, 62.5, 300.0, 1250.0]

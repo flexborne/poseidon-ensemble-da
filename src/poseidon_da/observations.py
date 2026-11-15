@@ -35,11 +35,13 @@ def locate_point3D(slon, slat, sdepth, boxnum, boxlons, boxlats, boxnlev, bdepth
     return bind, bn, blev
 
 
-def aggregate_observations(dat_path, geometry_path, bdepths):
+def aggregate_observations(dat_path, geometry_path, bdepths, expected_time=None, time_tol=1e-6):
     """Read one <date>.dat, map each measurement to box/level and average within a box.
 
-    Returns a dict with values/brefnum/breflev (p,1 arrays), the half-range
-    diagnostic sigc, and box_vs_allobs (contributor box ids per raw measurement).
+    Column 0 is the physical time (year); when expected_time is given every row must
+    match it, so a mislabelled file is rejected rather than silently relabelled. Raw
+    measured concentrations must be finite and positive before box-averaging. Returns
+    a dict with values/brefnum/breflev (p,1 arrays), sigc, and box_vs_allobs.
     """
     BBB = load_numeric_excel(geometry_path, sheet_name='Sheet1')
     boxnum = BBB[:, 0]
@@ -50,8 +52,18 @@ def aggregate_observations(dat_path, geometry_path, bdepths):
     Maxlev = int(np.max(boxnlev))
 
     data = np.atleast_2d(np.loadtxt(str(dat_path), skiprows=1))
-    slon, slat, sval = data[:, 1], data[:, 2], data[:, 3]
+    stime, slon, slat, sval = data[:, 0], data[:, 1], data[:, 2], data[:, 3]
     Ns = slon.shape[0]
+
+    if expected_time is not None:
+        bad = np.where(np.abs(stime - float(expected_time)) > time_tol)[0]
+        if bad.size:
+            raise ValueError(
+                f'{dat_path}: time column does not match requested time {expected_time} '
+                f'(e.g. row {int(bad[0]) + 1} has {stime[bad[0]]})')
+    if not np.all(np.isfinite(sval) & (sval > 0.0)):
+        bad = int(np.where(~(np.isfinite(sval) & (sval > 0.0)))[0][0])
+        raise ValueError(f'{dat_path}: non-positive/non-finite measurement at row {bad + 1}: {sval[bad]}')
 
     nobs_box = np.zeros((Nbox, Maxlev), dtype=int)
     box_st = {(j, k): [] for j in range(Nbox) for k in range(Maxlev)}

@@ -5,8 +5,6 @@ import math
 
 import numpy as np
 
-from .geometry import LAYER_DEPTHS
-
 
 def geo_distance(lat1, lon1, lat2, lon2) -> float:
     """Great-circle distance between two lat/lon points (degrees), in metres."""
@@ -22,12 +20,13 @@ def estimate_covariance(log_states) -> np.ndarray:
     return np.cov(np.asarray(log_states, dtype=float), bias=False)
 
 
-def localize_covariance(CC, Iind, Jind, centers, exclude, RcorH, RcorV,
+def localize_covariance(CC, Iind, Jind, centers, layer_depths, exclude, RcorH, RcorV,
                         Tind=None, obstimes=None, RcorT=1.0):
     """Element-wise localization of CC by horizontal, vertical (and optional temporal) distance.
 
-    Damping is exp(-DistH/RcorH) * exp(-DistV/RcorV) [* exp(-DistT/RcorT)]. Boxes in
-    `exclude` (1-based ids) are decoupled from all others. Returns (B, LocM).
+    Damping is exp(-DistH/RcorH) * exp(-DistV/RcorV) [* exp(-DistT/RcorT)]. layer_depths
+    are the representative depths used for the vertical distance. Boxes in `exclude`
+    (1-based ids) are decoupled from all others. Returns (B, LocM).
     """
     exclude = set(int(x) for x in exclude)
     N = CC.shape[0]
@@ -43,7 +42,7 @@ def localize_covariance(CC, Iind, Jind, centers, exclude, RcorH, RcorV,
             lat1, lon1 = centers[box1]
             lat2, lon2 = centers[box2]
             DistH = geo_distance(lat1, lon1, lat2, lon2)
-            DistV = abs(LAYER_DEPTHS[int(Jind[ii])] - LAYER_DEPTHS[int(Jind[jj])])
+            DistV = abs(layer_depths[int(Jind[ii])] - layer_depths[int(Jind[jj])])
             factor = math.exp(-DistH / RcorH) * math.exp(-DistV / RcorV)
             if Tind is not None:
                 DistT = abs(float(obstimes[int(Tind[ii])]) - float(obstimes[int(Tind[jj])]))

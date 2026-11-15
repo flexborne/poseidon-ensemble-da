@@ -13,6 +13,9 @@ dist/
 *.egg-info/
 results/
 
+# Regenerated reference candidates (baseline is frozen)
+tests/reference/candidate/
+
 # Virtual environments
 .venv/
 venv/

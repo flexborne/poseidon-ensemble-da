@@ -5,8 +5,14 @@ import numpy as np
 
 from .poseidon_io import load_numeric_excel
 
-# Representative mid-depths of the four fixed layers, used for vertical localization.
-LAYER_DEPTHS = [25 / 2, (25 + 100) / 2, (100 + 500) / 2, (500 + 2000) / 2]
+def layer_depths_from_bdepths(bdepths):
+    """Representative mid-depth of each layer from the depth-bin upper bounds.
+
+    One source of truth for the vertical coordinate: the same bdepths that bin the
+    measurements also define the depths used for vertical localization.
+    """
+    edges = [0.0] + [float(b) for b in bdepths]
+    return [(edges[i] + edges[i + 1]) / 2.0 for i in range(len(bdepths))]
 
 
 def box_levels() -> np.ndarray:

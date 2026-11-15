@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "POSEIDON ensemble data assimilation (poseidon_da)"
+abstract: >-
+  Python implementation of an ensemble Kalman filter / smoother for data
+  assimilation with the POSEIDON radionuclide transport model. This record
+  describes the software implementation; the underlying scientific method
+  should be cited separately from its authoritative publication.
+authors:
+  - family-names: Alexander
+version: 0.1.0
+license: MIT
+repository-code: "https://github.com/flexborne/poseidon-ensemble-da"
+type: software

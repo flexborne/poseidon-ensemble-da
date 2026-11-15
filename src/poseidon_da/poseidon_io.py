@@ -35,10 +35,13 @@ def read_poseidon(pfile, bnlev, validate=True):
             if not stripped:
                 continue
             C = stripped.split()
-            nn = int(float(C[0]))
-            if nn > Nbox:
+            tok = float(C[0])
+            if tok > Nbox:                      # footer rows (extra boxes, trailing physical-time line)
                 footer.append({'tline': tline})
                 continue
+            if tok != int(tok) or int(tok) < 1:  # a body row must be a positive integer box id
+                raise ValueError(f'read_poseidon: invalid box id {C[0]!r} in {pfile}')
+            nn = int(tok)
             if validate and nn in seen:
                 raise ValueError(f'read_poseidon: duplicate row for box {nn} in {pfile}')
             seen.add(nn)
@@ -58,6 +61,18 @@ def read_poseidon(pfile, bnlev, validate=True):
         if missing:
             raise ValueError(f'read_poseidon: missing box rows {missing} in {pfile}')
     return arr, header, footer, sed
+
+
+def extract_physical_time(footer):
+    """Physical time stamped in a POSEIDON footer (the trailing single-token line), or None."""
+    for item in reversed(footer):
+        toks = item['tline'].split()
+        if len(toks) == 1:
+            try:
+                return float(toks[0])
+            except ValueError:
+                continue
+    return None
 
 
 def write_poseidon(fname, vect, Lind, bnlev, header, footer, sed):

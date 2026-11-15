@@ -6,6 +6,26 @@ import numpy as np
 from .domain import StateLayout
 
 
+def validate_observation_coords(brefnum, breflev, bnlev) -> None:
+    """Reject observations whose (box, level) is not an existing physical coordinate.
+
+    Checked against the domain (bnlev) BEFORE any layout is built, so a non-existent
+    coordinate can never be materialized and later mistaken for a valid one.
+    """
+    brefnum = np.asarray(brefnum).ravel()
+    breflev = np.asarray(breflev).ravel()
+    Nb = len(bnlev) - 1
+    for i in range(brefnum.size):
+        bf, lf = float(brefnum[i]), float(breflev[i])
+        if bf != int(bf) or lf != int(lf):
+            raise ValueError(f'observation {i}: non-integer box/level ({bf}, {lf})')
+        b, lev = int(bf), int(lf)
+        if not (1 <= b <= Nb):
+            raise ValueError(f'observation {i}: box {b} out of range 1..{Nb}')
+        if not (1 <= lev <= int(bnlev[b])):
+            raise ValueError(f'observation {i}: level {lev} does not exist in box {b} (has {int(bnlev[b])})')
+
+
 def build_layout_single(bnlev) -> StateLayout:
     """Layout for a single date: one state component per (box, active level)."""
     Nb = len(bnlev) - 1

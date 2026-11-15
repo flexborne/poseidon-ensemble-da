@@ -15,13 +15,18 @@ def _default_output(config, sub):
     return Path.cwd() / 'results' / f'{config.case_id}-{sub}'
 
 
-def _cmd_validate(args):
-    config = load_config(args.case)
+def _report_problems(config):
     problems = validate(config)
     if problems:
         print(f'INVALID: {config.case_id} ({len(problems)} problem(s))')
         for p in problems:
             print(f'  - {p}')
+    return problems
+
+
+def _cmd_validate(args):
+    config = load_config(args.case)
+    if _report_problems(config):
         return 1
     print(f'OK: {config.case_id} is runnable '
           f'(target {config.target_time}, {len(config.observation_times)} observation date(s))')
@@ -30,8 +35,10 @@ def _cmd_validate(args):
 
 def _cmd_analyze(args):
     config = load_config(args.case)
+    if _report_problems(config):
+        return 1
     out = Path(args.output) if args.output else _default_output(config, 'analysis')
-    result = api.analyze(config, perturb=not args.no_perturb)
+    result = api.analyze(config, perturb=not args.no_perturb, seed=args.seed)
     from .results import export_result
     paths = export_result(result, out)
     print(f'analyze {config.case_id}: target={result.target} '
@@ -42,14 +49,10 @@ def _cmd_analyze(args):
 
 def _cmd_run(args):
     config = load_config(args.case)
-    problems = validate(config)
-    if problems:
-        print('cannot run, case is invalid:')
-        for p in problems:
-            print(f'  - {p}')
+    if _report_problems(config):
         return 1
     out = Path(args.output) if args.output else _default_output(config, 'run')
-    result = api.run(config, out, perturb=not args.no_perturb)
+    result = api.run(config, out, perturb=not args.no_perturb, seed=args.seed, force=args.force)
     print(f'run {config.case_id}: {result.status}')
     for step in result.steps:
         print(f'  {step["step"]}: {step["status"]}')
@@ -59,6 +62,8 @@ def _cmd_run(args):
 
 def _cmd_diagnose(args):
     config = load_config(args.case)
+    if _report_problems(config):
+        return 1
     out = Path(args.output) if args.output else _default_output(config, 'diagnose')
     out.mkdir(parents=True, exist_ok=True)
 
@@ -68,7 +73,8 @@ def _cmd_diagnose(args):
     from .runner import find_members
 
     batch = aggregate_observations(str(config.measurements_dir / f'{config.target_time}.dat'),
-                                   str(config.geometry), config.bdepths)
+                                   str(config.geometry), config.bdepths,
+                                   expected_time=float(config.target_time))
     obs, brefnum, breflev = batch['values'], batch['brefnum'], batch['breflev']
     bnlev = box_levels()
     members = find_members(config.runs_root / config.target_time)
@@ -81,8 +87,8 @@ def _cmd_diagnose(args):
         sim = np.array([[arr[int(brefnum[L, 0]) - 1, int(breflev[L, 0]) - 1]] for L in range(No)])
         ens += sim
         xlswrite(str(report), sim, m)
-    ens /= np.single(len(members))
-    xlswrite(str(report), ens, 'Ens')
+    ens /= np.single(len(members))            # arithmetic ensemble mean of concentrations
+    xlswrite(str(report), ens, 'arithmetic_mean')
     print(f'diagnose {config.case_id}: {No} observations, {len(members)} members -> {report}')
     return 0
 
@@ -104,6 +110,9 @@ def build_parser():
             sp.add_argument('--output', '-o', default=None, help='output directory')
             sp.add_argument('--no-perturb', action='store_true',
                             help='disable observation perturbations (deterministic)')
+            sp.add_argument('--seed', type=int, default=None, help='RNG seed for perturbations')
+        if name == 'run':
+            sp.add_argument('--force', action='store_true', help='overwrite a non-empty output directory')
         sp.set_defaults(func=func)
     return p
 

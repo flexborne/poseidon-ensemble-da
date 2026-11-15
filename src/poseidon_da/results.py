@@ -20,7 +20,7 @@ def _checksum(path: Path) -> str:
 
 
 def export_result(result: AnalysisResult, output_dir) -> dict:
-    """Write NPZ arrays, a JSON summary and an XLSX report. Returns written paths."""
+    """Write NPZ arrays (with physical coordinates), a JSON summary and an XLSX report."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -30,8 +30,10 @@ def export_result(result: AnalysisResult, output_dir) -> dict:
         log_states=result.log_states,
         concentrations=result.concentrations,
         geometric_mean=result.geometric_mean,
-        obs_indices=result.obs_indices,
-        observations=result.observations,
+        arithmetic_mean=result.arithmetic_mean,
+        box_id=result.box_id, layer_id=result.layer_id, time=result.time,
+        obs_indices=result.obs_indices, observations=result.observations,
+        obs_box_id=result.obs_box_id, obs_layer_id=result.obs_layer_id, obs_time=result.obs_time,
         member_ids=np.array(result.member_ids),
     )
 
@@ -41,23 +43,36 @@ def export_result(result: AnalysisResult, output_dir) -> dict:
         'diagnostics': result.diagnostics,
         'n_state': int(result.log_states.shape[0]),
         'n_members': int(result.log_states.shape[1]),
+        'axes': {'state_rows': ['box_id', 'layer_id', 'time'],
+                 'means': ['geometric_mean', 'arithmetic_mean']},
     }
     (out / 'result.json').write_text(json.dumps(summary, indent=2))
 
     report = out / 'report.xlsx'
     xlswrite(str(report), result.geometric_mean.reshape(-1, 1), 'geometric_mean')
+    xlswrite(str(report), result.arithmetic_mean.reshape(-1, 1), 'arithmetic_mean')
     xlswrite(str(report), result.observations.reshape(-1, 1), 'observations')
 
     return {'npz': npz, 'json': out / 'result.json', 'xlsx': report}
 
 
-def build_manifest(config, result: AnalysisResult, package_version: str, steps) -> dict:
-    """Assemble a manifest recording versions, config, inputs and per-step status."""
+def build_manifest(config, result: AnalysisResult, package_version: str, steps,
+                   *, localization_used, perturb, seed) -> dict:
+    """Manifest recording versions, normalized config, input checksums and per-step status."""
     inputs = {}
     try:
-        inputs['geometry_sha256'] = _checksum(config.geometry)
+        inputs['geometry'] = {'path': str(config.geometry), 'sha256': _checksum(config.geometry)}
     except OSError:
         pass
+    meas = {}
+    for d in config.observation_times:
+        f = config.measurements_dir / f'{d}.dat'
+        try:
+            meas[d] = {'path': str(f), 'sha256': _checksum(f)}
+        except OSError:
+            pass
+    inputs['measurements'] = meas
+
     return {
         'package_version': package_version,
         'schema_version': config.schema_version,
@@ -65,7 +80,9 @@ def build_manifest(config, result: AnalysisResult, package_version: str, steps) 
         'target_time': result.target,
         'observation_times': list(config.observation_times),
         'gsd': config.gsd,
-        'localization': config.localization,
+        'bdepths': config.bdepths,
+        'localization_used': localization_used,
+        'perturbation': {'enabled': bool(perturb), 'seed': seed},
         'member_order': list(result.member_ids),
         'diagnostics': result.diagnostics,
         'inputs': inputs,

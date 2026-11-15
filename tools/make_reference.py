@@ -1,9 +1,10 @@
-"""Regenerate the golden reference arrays (deterministic, perturbations off).
+"""Regenerate CANDIDATE reference arrays and compare to the frozen baseline.
 
-The committed arrays in tests/reference/ were originally captured from the previous
-stacked-least-squares solver; the current observation-space solver reproduces them within
-~1e-6. Running this re-derives them from the current package (so they stay
-reproducible); the regression tests allow a small tolerance either way.
+The frozen baseline in tests/reference/*.npz is the regression ground truth (see
+tests/reference/PROVENANCE.md) and is deliberately NOT overwritten here. This script
+recomputes the arrays with the current package (deterministic, perturbations off),
+writes them under tests/reference/candidate/, and prints the max deviation from the
+baseline. Promoting a candidate to the baseline is a manual, justified step.
 
 Usage:
     python tools/make_reference.py
@@ -20,26 +21,35 @@ from poseidon_da.runner import RunContext
 from poseidon_da import workflow
 
 REF_DIR = Path(__file__).resolve().parent.parent / 'tests' / 'reference'
+CAND_DIR = REF_DIR / 'candidate'
 GEOM = str(box_surfareas_with_centers_path())
 MEAS = str(MEASUREMENTS_DIR)
 
+CASES = {
+    'filter_1986.75.npz': AnalysisWindow('1986.75', ('1986.75',)),
+    'smoother_1988.625_1988.5.npz': AnalysisWindow('1988.5', ('1988.625', '1988.5')),
+}
+
 
 def _run(window):
-    ctx = RunContext.isolated(REF_DIR.parent / '_tmp_ref', runs_root=RUNS_ROOT)
+    ctx = RunContext.isolated(CAND_DIR / '_tmp', runs_root=RUNS_ROOT)
     result, _ = workflow.analyze(window, ctx, geometry_path=GEOM, measurements_dir=MEAS, perturb=False)
     return result.log_states
 
 
 def main():
-    REF_DIR.mkdir(parents=True, exist_ok=True)
-    sol = _run(AnalysisWindow('1986.75', ('1986.75',)))
-    np.savez(REF_DIR / 'filter_1986.75.npz', sol=sol, strdate='1986.75', kind='filter')
-    print(f'filter 1986.75: {sol.shape}')
-
-    sol = _run(AnalysisWindow('1988.5', ('1988.625', '1988.5')))
-    np.savez(REF_DIR / 'smoother_1988.625_1988.5.npz', sol=sol,
-             strdates=np.array(['1988.625', '1988.5']), kind='smoother')
-    print(f'smoother [1988.625,1988.5]: {sol.shape}')
+    CAND_DIR.mkdir(parents=True, exist_ok=True)
+    for name, window in CASES.items():
+        sol = _run(window)
+        np.savez(CAND_DIR / name, sol=sol)
+        baseline = REF_DIR / name
+        if baseline.exists():
+            gold = np.load(baseline)['sol']
+            delta = np.max(np.abs(sol - gold)) if sol.shape == gold.shape else float('nan')
+            print(f'{name}: candidate {sol.shape}, max|candidate-baseline| = {delta:.3e}')
+        else:
+            print(f'{name}: candidate {sol.shape} (no baseline to compare)')
+    print(f'candidates written to {CAND_DIR} (baseline left untouched)')
 
 
 if __name__ == '__main__':
