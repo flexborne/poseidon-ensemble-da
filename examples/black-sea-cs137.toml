@@ -27,5 +27,5 @@ executable = "../bin/Poseidon4.exe"
 launcher = ["wine"]
 
 [cycle]
-mode = "filter"                                 # noda | filter | (smoother: gated on review 4.1)
+mode = "filter"                                 # noda | filter  (smoother not yet available)
 dates = ["1986.75", "1987.5", "1988.25"]        # sequential analysis-forecast date chain

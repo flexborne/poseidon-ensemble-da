@@ -3,7 +3,7 @@
 The cycle never mutates the dataset: it copies the needed date directories into an
 isolated work area and runs there. The external model is injected as `model_runner`
 so the orchestration can be tested without POSEIDON. The smoother cycle is gated until
-its information-reuse contract is decided (review 4.1).
+its information-reuse contract is defined.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def plan_cycle(mode: str, dates, measurements_dir) -> list:
     """Deterministic step plan with per-step provenance (what seeds/uses what)."""
     if mode == 'smoother':
         raise NotImplementedError(
-            "smoother cycle needs a decided information-reuse contract (review 4.1); "
+            "smoother cycle needs a defined information-reuse contract; "
             "use mode 'filter' or 'noda'")
     if mode not in ('noda', 'filter'):
         raise ValueError(f'unknown cycle mode {mode!r}')

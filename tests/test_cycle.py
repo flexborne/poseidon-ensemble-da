@@ -38,7 +38,7 @@ def test_plan_cycle_noda_order(tmp_path):
 
 
 def test_plan_cycle_smoother_is_gated(tmp_path):
-    with pytest.raises(NotImplementedError, match='4.1'):
+    with pytest.raises(NotImplementedError, match='smoother'):
         plan_cycle('smoother', ['1.0', '2.0'], tmp_path)
 
 

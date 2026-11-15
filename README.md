@@ -21,7 +21,7 @@ output directory — nothing else.
 - [Python API](#python-api)
 - [Case configuration](#case-configuration)
 - [Method overview](#method-overview)
-- [check](#check)
+- [Reproducibility](#reproducibility)
 - [Repository layout](#repository-layout)
 - [Package modules](#package-modules)
 - [Development & tests](#development--tests)
@@ -141,34 +141,16 @@ the last/target date).
 
 ---
 
-## check
+## Reproducibility
 
-**checked against the original the model.** Running the original the model functions
-([tools/model_dump.m](tools/model_dump.m), perturbations zeroed) on identical inputs and
-comparing with the Python implementation ([tools/compare_model_dump.py](tools/compare_model_dump.py))
-gives, for the filter (`1986.75`) and smoother (`[1988.625, 1988.5]`):
+The analysis is deterministic apart from the stochastic observation perturbations. Use
+`--no-perturb` (CLI) or `perturb=False` (API) for a fully deterministic run, and `--seed` /
+`seed=` for reproducible perturbed runs. Each run records its inputs, parameters and
+per-step status in `manifest.json`.
 
-| quantity | max abs. difference | meaning |
-|---|---|---|
-| `y` observations | ≤ 4.6×10⁻⁸ | single-precision box averaging |
-| `Xf` ensemble log-states | 5.3×10⁻¹⁵ | machine precision |
-| `B` localized covariance | ≤ 4.4×10⁻¹⁶ | machine precision |
-| `sol` analysis | ≤ 1.4×10⁻⁶ | = the model's iterative-least-squares tolerance |
-
-The front end, ensemble read, covariance and localization match the model **to machine precision**;
-the `sol` gap is exactly the model's least-squares under-convergence — the Python observation-space solver is
-the exact minimizer of the same quadratic problem (it replaces the explicit `B⁻¹` + LDL +
-per-member least-squares). Reproduce with `model_dump.m` (in the model) + `compare_model_dump.py`.
-
-**Also checked:** the Python solver reproduces the frozen golden arrays within ~1e-6
-([tests/test_regression.py](tests/test_regression.py), baseline described in
-[tests/reference/PROVENANCE.md](tests/reference/PROVENANCE.md)); and `read_poseidon`→`write_poseidon`
-round-trips reproduce the the model restart-file body byte-for-byte.
-
-**Randomness.** The only stochastic element is the observation perturbations; `--no-perturb`
-makes a run deterministic and reproducible within Python (fixed `--seed`). Zeroing the
-perturbations is *not* a square-root EnKF — it does not add the `K R Kᵀ` correction to the
-analysis-ensemble covariance.
+A regression test ([tests/test_regression.py](tests/test_regression.py)) checks the solver
+against stored reference arrays in `tests/reference/`; `tools/make_reference.py` regenerates
+them deterministically.
 
 ---
 

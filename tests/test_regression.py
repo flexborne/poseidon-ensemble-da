@@ -1,8 +1,7 @@
-"""Regression: the package solver reproduces the previous result within tolerance.
+"""Regression: the solver reproduces the stored reference arrays within tolerance.
 
-Golden arrays in tests/reference/ were captured from the previous stacked-least-squares solver
-with perturbations zeroed. The observation-space solver is the exact least-squares
-minimizer, so it agrees up to least-squares's convergence tolerance (~1e-6), not bit-for-bit.
+Reference arrays in tests/reference/ were produced deterministically (perturbations off).
+The comparison allows a small numerical tolerance (~1e-6) rather than bit-for-bit equality.
 """
 from __future__ import annotations
 
