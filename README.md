@@ -156,7 +156,9 @@ per-step status in `manifest.json`.
 
 A regression test ([tests/test_regression.py](tests/test_regression.py)) checks the solver
 against stored reference arrays in `tests/reference/`; `tools/make_reference.py` regenerates
-them deterministically.
+them deterministically. `tools/smoke_model.py` runs the real `Poseidon4.exe` on a complete
+project through the package runner and checks the fresh `lastconc.xls` is byte-identical to the
+archived output.
 
 ---
 
@@ -168,7 +170,7 @@ poseidon-ensemble-da/
   src/poseidon_da/            # the installable package
   examples/                   # example case.toml
   tests/                      # pytest suite + reference/ golden arrays
-  tools/                      # make_reference.py
+  tools/                      # make_reference.py, smoke_model.py
   config/                     # box geometry (dataset)
   measurements.exp2/          # observation files (dataset)
   DAruns/01.RunKFS/<date>/    # POSEIDON working directories (dataset/archive)
@@ -218,4 +220,6 @@ example case. Data-dependent tests skip automatically when the archive is absent
 only to an isolated `RunContext`, never into `DAruns/`.
 
 `python tools/make_reference.py` regenerates *candidate* arrays under `tests/reference/candidate/`
-for review — it does not overwrite the frozen baseline.
+for review — it does not overwrite the frozen baseline. `python tools/smoke_model.py --project
+<complete-project-dir> --exe bin/Poseidon4.exe` runs the real model end-to-end (export
+`WINEPREFIX` on macOS/Linux).

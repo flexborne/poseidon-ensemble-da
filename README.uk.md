@@ -153,7 +153,9 @@ use_pty    = true       # консольному застосунку потрі
 
 Регресійний тест ([tests/test_regression.py](tests/test_regression.py)) звіряє розв'язувач із
 збереженими еталонними масивами в `tests/reference/`; `tools/make_reference.py` формує
-*candidate* для перегляду, не перезаписуючи baseline.
+*candidate* для перегляду, не перезаписуючи baseline. `tools/smoke_model.py` запускає справжній
+`Poseidon4.exe` на повному проєкті через runner пакета й перевіряє, що свіжий `lastconc.xls`
+побайтово збігається з архівним.
 
 ---
 
@@ -165,7 +167,7 @@ poseidon-ensemble-da/
   src/poseidon_da/            # інстальований пакет
   examples/                   # приклад case.toml
   tests/                      # pytest + reference/ (еталонні масиви)
-  tools/                      # make_reference.py
+  tools/                      # make_reference.py, smoke_model.py
   config/                     # геометрія боксів (набір даних)
   measurements.exp2/          # файли спостережень (набір даних)
   DAruns/01.RunKFS/<date>/    # робочі каталоги POSEIDON (набір даних/архів)
@@ -214,4 +216,6 @@ pytest -q
 потребують архіву, пропускаються без нього; усі прогони пишуть лише в ізольований `RunContext`.
 
 `python tools/make_reference.py` формує *candidate*-масиви в `tests/reference/candidate/` для
-перегляду — заморожений baseline не перезаписується.
+перегляду — заморожений baseline не перезаписується. `python tools/smoke_model.py --project
+<повний-каталог-проєкту> --exe bin/Poseidon4.exe` запускає справжню модель наскрізно (на
+macOS/Linux експортуйте `WINEPREFIX`).
