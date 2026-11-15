@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 
 from . import workflow
-from .config import Config, load_config, protected_inputs, validate, validate_diagnose  # load_config re-exported
+from .config import (Config, load_config, normalize_localization,  # load_config re-exported
+                     protected_inputs, validate, validate_diagnose)
 from .domain import AnalysisResult, AnalysisWindow, RunResult
 from .publish import assert_safe_dest, staged_publish
 from .results import build_manifest, export_result, write_manifest
@@ -16,15 +17,15 @@ __all__ = ['load_config', 'analyze', 'write_analysis', 'run', 'diagnose', 'run_c
            'Config', 'AnalysisResult', 'RunResult']
 
 
+def _prepare(config: Config) -> None:
+    """Finalize the config for an operation in place (complete the localization dict)."""
+    config.localization = normalize_localization(config.localization)
+
+
 def _require_valid(config: Config) -> None:
     problems = validate(config)
     if problems:
         raise ValueError('invalid case:\n  - ' + '\n  - '.join(problems))
-
-
-def _window(config: Config) -> AnalysisWindow:
-    return AnalysisWindow(target_time=config.target_time,
-                          observation_times=tuple(config.observation_times))
 
 
 def _rng(seed, rng, perturb):
@@ -36,21 +37,16 @@ def _rng(seed, rng, perturb):
     return rng if rng is not None else np.random.default_rng(seed)
 
 
-def _perturbation_meta(seed, rng, perturb):
-    return {'enabled': bool(perturb), 'seed': seed,
-            'rng': 'external (not reconstructible)' if rng is not None else None}
-
-
 def _analyze(config: Config, ctx: RunContext, perturb, rng):
+    window = AnalysisWindow(config.target_time, tuple(config.observation_times))
     return workflow.analyze(
-        _window(config), ctx,
-        geometry_path=str(config.geometry), measurements_dir=str(config.measurements_dir),
-        gsd=config.gsd, localization=config.localization, bdepths=config.bdepths,
-        perturb=perturb, rng=rng)
+        window, ctx, geometry_path=str(config.geometry), measurements_dir=str(config.measurements_dir),
+        gsd=config.gsd, localization=config.localization, bdepths=config.bdepths, perturb=perturb, rng=rng)
 
 
 def analyze(config: Config, *, perturb=True, rng=None, seed=None) -> AnalysisResult:
     """Validate the case, compute the analysis, and return the result (no files written)."""
+    _prepare(config)
     _require_valid(config)
     ctx = RunContext.isolated(config.runs_root, runs_root=config.runs_root)
     result, _ = _analyze(config, ctx, perturb, _rng(seed, rng, perturb))
@@ -66,8 +62,11 @@ def _publish_analysis(config: Config, output_dir, *, include_model_outputs,
     """
     from . import __version__
     assert_safe_dest(output_dir, protected_inputs(config))          # never overwrite the dataset
+    _prepare(config)
     _require_valid(config)
     rng_obj = _rng(seed, rng, perturb)
+    perturbation = {'enabled': bool(perturb), 'seed': seed,
+                    'rng': 'external (not reconstructible)' if rng is not None else None}
 
     with staged_publish(output_dir, force) as staging:
         ctx = RunContext.isolated(staging, runs_root=config.runs_root)
@@ -83,8 +82,7 @@ def _publish_analysis(config: Config, output_dir, *, include_model_outputs,
         manifest = build_manifest(
             config, __version__, steps, operation='run' if include_model_outputs else 'analyze',
             target_time=result.target, dates=list(config.observation_times), member_ids=result.member_ids,
-            localization_used=config.localization, perturbation=_perturbation_meta(seed, rng, perturb),
-            diagnostics=result.diagnostics)
+            perturbation=perturbation, diagnostics=result.diagnostics)
         write_manifest(manifest, staging)
 
     out = Path(output_dir)
@@ -111,6 +109,7 @@ def diagnose(config: Config, output_dir, *, date=None, force=False) -> RunResult
     """Validate, compare the forecast at `date` (default target) against observations, publish atomically."""
     from . import __version__
     assert_safe_dest(output_dir, protected_inputs(config))
+    _prepare(config)
     date = date or config.target_time
     problems = validate_diagnose(config, date)
     if problems:
@@ -123,8 +122,7 @@ def diagnose(config: Config, output_dir, *, date=None, force=False) -> RunResult
                   'n_obs': int(obs.shape[0]), 'n_members': len(members)}]
         manifest = build_manifest(
             config, __version__, steps, operation='diagnose', target_time=date,
-            dates=[date], member_ids=members, localization_used=config.localization,
-            perturbation={'enabled': False, 'seed': None}, mode='diagnose')
+            dates=[date], member_ids=members, perturbation={'enabled': False, 'seed': None}, mode='diagnose')
         write_manifest(manifest, staging)
 
     out = Path(output_dir)

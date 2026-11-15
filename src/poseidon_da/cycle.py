@@ -18,7 +18,7 @@ import numpy as np
 from . import workflow
 from .domain import AnalysisWindow, RunResult
 from .geometry import box_levels
-from .config import protected_inputs, validate_parameters
+from .config import normalize_localization, protected_inputs, validate_parameters
 from .publish import assert_safe_dest, staged_publish
 from .results import build_manifest, export_result, write_manifest
 from .runner import (RunContext, copy_lastconc_to_initconc, find_members,
@@ -32,8 +32,7 @@ class CycleStep:
 
     kind: str                          # 'analyze' | 'forecast' | 'diagnose'
     date: str                          # analyze: target date; forecast/diagnose: that date
-    window: tuple | None = None        # analyze: observation dates (target last)
-    window_kind: str | None = None     # analyze: 'filter' | 'smoother'
+    window: tuple | None = None        # analyze: observation dates (target last; len 1 == filter)
     window_index: list | None = None   # analyze: [minind, maxind] of a smoother window
     restart_kind: str | None = None    # forecast: 'analysis' (restart file) | 'restart' (prior lastconc)
     source: str | None = None          # forecast: date whose state seeds this one
@@ -42,7 +41,8 @@ class CycleStep:
     @property
     def provenance(self) -> dict:
         if self.kind == 'analyze':
-            prov = {'observations': list(self.window), 'kind': self.window_kind}
+            prov = {'observations': list(self.window),
+                    'kind': 'filter' if len(self.window) == 1 else 'smoother'}
             if self.window_index is not None:
                 prov['window_index'] = self.window_index
             return prov
@@ -71,57 +71,43 @@ def _diagnose_step(date, measurements_dir) -> CycleStep:
                      has_measurement=(Path(measurements_dir) / f'{date}.dat').exists())
 
 
+def _analyze_step(mode, dates, t, minind, maxind) -> CycleStep:
+    """Analysis step for target date index t: a single-date (filter) or +/- neighbour (smoother) window."""
+    cur = dates[t]
+    if mode == 'filter' or (minind[t] == t + 1 and maxind[t] == t + 1):   # trivial window -> filter
+        return CycleStep('analyze', cur, window=(cur,))
+    lo, hi = minind[t], maxind[t]                                         # 1-based inclusive bounds
+    meas = [dates[j - 1] for j in range(lo, t + 1)]                       # past dates
+    meas += [dates[j - 1] for j in range(t + 2, hi + 1)]                  # future dates
+    meas += [cur]                                                         # target is always last
+    return CycleStep('analyze', cur, window=tuple(meas), window_index=[lo, hi])
+
+
 def plan_cycle(mode: str, dates, measurements_dir, window_years=0.25) -> list:
-    """Deterministic step plan (analyze/forecast/diagnose records) for any of the three modes.
+    """Deterministic analyze/forecast/diagnose plan for any mode, built in one pass over the dates.
 
-    One plan shape for every mode, so a single executor can run it and the full sequence of
-    states, windows and restart sources is inspectable before the model runs.
+    For each target date: optionally analyse it, then forecast forward to the right edge of the
+    horizon (the next date for noda/filter, maxind(next) for smoother), seeding the first leg from
+    the analysis (or from the previous state for noda) and diagnosing that first forecast.
     """
+    if mode not in ('noda', 'filter', 'smoother'):
+        raise ValueError(f'unknown cycle mode {mode!r}')
     dates = list(dates)
-    if mode == 'noda':
-        return _plan_sequential(dates, measurements_dir, analyze=False)
-    if mode == 'filter':
-        return _plan_sequential(dates, measurements_dir, analyze=True)
-    if mode == 'smoother':
-        return _plan_smoother(dates, measurements_dir, window_years)
-    raise ValueError(f'unknown cycle mode {mode!r}')
+    minind, maxind = derive_windows(dates, window_years) if mode == 'smoother' else (None, None)
 
-
-def _plan_sequential(dates, measurements_dir, analyze: bool) -> list:
-    """NODA (analyze=False) / filter (analyze=True): analyse each date, forecast to the next."""
     steps = []
-    for i in range(len(dates) - 1):
-        cur, nxt = dates[i], dates[i + 1]
-        if analyze:
-            steps.append(CycleStep('analyze', cur, window=(cur,), window_kind='filter'))
-        steps.append(CycleStep('forecast', nxt, restart_kind='analysis' if analyze else 'restart', source=cur))
-        steps.append(_diagnose_step(nxt, measurements_dir))
-    return steps
-
-
-def _plan_smoother(dates, measurements_dir, window_years) -> list:
-    """Per analysis date: assimilate its +/- window, then forecast ahead to maxind(i+1)."""
-    minind, maxind = derive_windows(dates, window_years)
-    steps = []
-    for i in range(1, len(dates)):                           # 1-based analysis index, i = 1..Nd-1
-        cur = dates[i - 1]
-        if minind[i - 1] == i and maxind[i - 1] == i:        # trivial window -> filter
-            steps.append(CycleStep('analyze', cur, window=(cur,), window_kind='filter'))
-        else:                                                # smoother over the +/- window
-            meas = [dates[j - 1] for j in range(minind[i - 1], i)]           # past dates
-            meas += [dates[j - 1] for j in range(i + 1, maxind[i - 1] + 1)]  # future dates
-            meas += [cur]                                                    # target is always last
-            steps.append(CycleStep('analyze', cur, window=tuple(meas), window_kind='smoother',
-                                   window_index=[minind[i - 1], maxind[i - 1]]))
-
-        lo, hi = i + 1, maxind[i]                             # forecast lookahead: maxind(i+1)
-        for j in range(lo, hi + 1):
-            fdate = dates[j - 1]
-            if j == lo:
-                steps.append(CycleStep('forecast', fdate, restart_kind='analysis', source=cur))
-                steps.append(_diagnose_step(fdate, measurements_dir))
+    for t in range(len(dates) - 1):                          # target date index
+        cur = dates[t]
+        if mode != 'noda':
+            steps.append(_analyze_step(mode, dates, t, minind, maxind))
+        horizon_end = maxind[t + 1] if mode == 'smoother' else t + 2    # exclusive date index
+        for f in range(t + 1, horizon_end):
+            if f == t + 1:
+                steps.append(CycleStep('forecast', dates[f],
+                                       restart_kind='restart' if mode == 'noda' else 'analysis', source=cur))
+                steps.append(_diagnose_step(dates[f], measurements_dir))
             else:
-                steps.append(CycleStep('forecast', fdate, restart_kind='restart', source=dates[j - 2]))
+                steps.append(CycleStep('forecast', dates[f], restart_kind='restart', source=dates[f - 1]))
     return steps
 
 
@@ -208,13 +194,15 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
 
     # ---- validate everything before any write ----
     assert_safe_dest(output_dir, protected_inputs(config))          # never overwrite the dataset (R2.1)
-    problems = validate_parameters(config)                          # shared case/parameter checks
-    if problems:
-        raise ValueError('invalid case:\n  - ' + '\n  - '.join(problems))
+    config.localization = normalize_localization(config.localization)
     times = [_cycle_time(d, runs_root) for d in dates]              # finite time + safe path component (R2)
     if any(times[i] >= times[i + 1] for i in range(len(times) - 1)):
         raise ValueError(f'cycle dates must be strictly increasing in physical time (got {dates})')
     plan = plan_cycle(mode, dates, config.measurements_dir, config.cycle_window_years)
+    if any(s.kind == 'analyze' for s in plan):                     # assimilation params only when analysing
+        problems = validate_parameters(config)
+        if problems:
+            raise ValueError('invalid case:\n  - ' + '\n  - '.join(problems))
     member_set = None
     for d in dates:
         ddir = runs_root / d
@@ -259,7 +247,7 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
 
         manifest = build_manifest(
             config, __version__, executed, operation='cycle', target_time=None,
-            dates=dates, member_ids=member_set, localization_used=config.localization,
+            dates=dates, member_ids=member_set,
             perturbation={'enabled': bool(perturb), 'seed': seed}, mode=mode,
             window_years=config.cycle_window_years if mode == 'smoother' else None)
         write_manifest(manifest, staging)

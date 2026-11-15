@@ -109,6 +109,17 @@ def _open_fd_count():
 
 
 @requires_data
+def test_analyze_accepts_partial_localization():
+    # setting a partial localization dict via the Python API must be completed, not KeyError
+    import numpy as np
+    config = load_config(EXAMPLE_CASE)
+    config.localization = {'horizontal_m': 123000.0}
+    assert validate(config) == []
+    r = api.analyze(config, perturb=False)
+    assert np.all(np.isfinite(r.log_states))
+
+
+@requires_data
 def test_diagnose_publishes_atomically(tmp_path):
     config = load_config(EXAMPLE_CASE)
     out = tmp_path / 'd'
@@ -190,12 +201,23 @@ def test_run_cycle_rejects_unordered_dates(tmp_path):
 
 
 def test_run_cycle_applies_parameter_validation(tmp_path):
-    # the shared parameter validation now runs for the cycle too (not only analyze)
+    # assimilation-parameter validation runs when the plan analyses (filter/smoother)
     config, runs = _fake_cycle_dataset(tmp_path)
     config.gsd = 1.0                                   # invalid: must be > 1
     with pytest.raises(ValueError, match='gsd'):
-        run_cycle(config, tmp_path / 'out', mode='noda', dates=['1.0', '2.0'],
+        run_cycle(config, tmp_path / 'out', mode='filter', dates=['1.0', '2.0'],
                   model_runner=lambda *a: None)
+
+
+def test_noda_cycle_runs_without_measurements(tmp_path):
+    # NODA has no analyze/needed assimilation inputs: a missing measurements dir must not block it
+    config, runs = _fake_dataset(tmp_path)
+    (runs / '2.0' / '01.hydrol1dep1').mkdir(parents=True)
+    config.measurements_dir = tmp_path / 'nonexistent'
+    res = run_cycle(config, tmp_path / 'out', mode='noda', dates=['1.0', '2.0'],
+                    model_runner=lambda *a: None, perturb=False)
+    assert res.status == 'ok'
+    assert all(s['step'] != 'analyze' for s in res.steps)
 
 
 def test_run_cycle_requires_window_states_present(tmp_path):

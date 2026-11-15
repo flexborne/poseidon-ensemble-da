@@ -80,15 +80,14 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
     Xf = np.zeros((layout.n_state, M), dtype=float)
     metas = [None] * M
     for i, member in enumerate(members):
-        per_date = {}
+        states = []
         for k, d in enumerate(dates):
             arr, header, footer, sed = read_state(
                 str(ctx.date_dir(d) / member / 'lastconc.xls'), bnlev, expected_time=float(d), time_tol=TIME_TOL)
-            per_date[k] = arr
+            states.append(arr)
             if k == len(dates) - 1:
                 metas[i] = (header, footer, sed)
-        for L in range(layout.n_state):
-            Xf[L, i] = per_date[int(Tind[L])][int(Iind[L]), int(Jind[L])]
+        Xf[:, i] = np.stack(states)[Tind, Iind, Jind]       # gather (date, box, level) per state row
     Xf = np.log(Xf)
 
     # covariance -> localization -> analysis

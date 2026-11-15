@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
+from poseidon_da.config import DEFAULT_BDEPTHS, DEFAULT_GSD, normalize_localization
 from poseidon_da.domain import AnalysisWindow
 from poseidon_da.paths import MEASUREMENTS_DIR, RUNS_ROOT, box_surfareas_with_centers_path
 from poseidon_da.runner import RunContext
@@ -24,6 +25,8 @@ REF_DIR = Path(__file__).resolve().parent.parent / 'tests' / 'reference'
 CAND_DIR = REF_DIR / 'candidate'
 GEOM = str(box_surfareas_with_centers_path())
 MEAS = str(MEASUREMENTS_DIR)
+PARAMS = dict(geometry_path=GEOM, measurements_dir=MEAS, gsd=DEFAULT_GSD,
+              localization=normalize_localization(), bdepths=list(DEFAULT_BDEPTHS), perturb=False)
 
 CASES = {
     'filter_1986.75.npz': AnalysisWindow('1986.75', ('1986.75',)),
@@ -33,7 +36,7 @@ CASES = {
 
 def _run(window):
     ctx = RunContext.isolated(CAND_DIR / '_tmp', runs_root=RUNS_ROOT)
-    result, _ = workflow.analyze(window, ctx, geometry_path=GEOM, measurements_dir=MEAS, perturb=False)
+    result, _ = workflow.analyze(window, ctx, **PARAMS)
     return result.log_states
 
 

@@ -50,12 +50,13 @@ def export_result(result: AnalysisResult, output_dir) -> dict:
 
 
 def build_manifest(config, package_version: str, steps, *, operation, target_time, dates, member_ids,
-                   localization_used, perturbation, diagnostics=None, mode=None, window_years=None) -> dict:
+                   perturbation, diagnostics=None, mode=None, window_years=None) -> dict:
     """Serialize one operation's manifest from explicit facts (no fallback inference).
 
     The caller passes the operation, its target, dates, member order and diagnostics; this only
-    serializes them and hashes the actually-read inputs (geometry + each date's measurement file
-    and ensemble states), so a step's inputs are identifiable without storing ensemble copies.
+    serializes them (localization comes from the already-finalized config) and hashes the
+    actually-read inputs (geometry + each date's measurement file and ensemble states), so a
+    step's inputs are identifiable without storing ensemble copies.
     """
     import scipy
 
@@ -84,7 +85,7 @@ def build_manifest(config, package_version: str, steps, *, operation, target_tim
         'window_years': window_years,
         'gsd': config.gsd,
         'bdepths': config.bdepths,
-        'localization_used': localization_used,
+        'localization_used': config.localization,
         'perturbation': perturbation,
         'member_order': member_ids,
         'library_versions': {'numpy': np.__version__, 'scipy': scipy.__version__},
