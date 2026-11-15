@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "poseidon-da"
+version = "0.1.0"
+description = "Ensemble Kalman filter / smoother data assimilation for the POSEIDON radionuclide transport model"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Alexander" }]
+dependencies = [
+    "numpy",
+    "scipy",
+    "openpyxl",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+poseidon-da = "poseidon_da.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["poseidon_da*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

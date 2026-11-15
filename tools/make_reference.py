@@ -1,81 +1,45 @@
-"""Generate golden reference arrays from the CURRENT solver (Stage 0).
+"""Regenerate the golden reference arrays (deterministic, perturbations off).
 
-Runs the previous filter (main_LN) and smoother (main_KSF_LN) with the
-observation perturbations forced to zero, and captures the exact per-member
-log-state solution produced by the current stacked-least-squares solver. These arrays
-become the regression baseline against which the refactored solver and the
-operational fixes are validated.
+The committed arrays in tests/reference/ were originally captured from the previous
+stacked-least-squares solver; the current observation-space solver reproduces them within
+~1e-6. Running this re-derives them from the current package (so they stay
+reproducible); the regression tests allow a small tolerance either way.
 
 Usage:
     python tools/make_reference.py
-
-Writes:
-    tests/reference/filter_1986.75.npz
-    tests/reference/smoother_1988.625_1988.5.npz
-
-Note: running the mains writes into DAruns/ (restart files, out_*.xlsx).
-Restore them afterwards with `git checkout -- DAruns`.
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / 'src'
-sys.path.insert(0, str(SRC))
-REF_DIR = ROOT / 'tests' / 'reference'
+from poseidon_da.domain import AnalysisWindow
+from poseidon_da.paths import MEASUREMENTS_DIR, RUNS_ROOT, box_surfareas_with_centers_path
+from poseidon_da.runner import RunContext
+from poseidon_da import workflow
+
+REF_DIR = Path(__file__).resolve().parent.parent / 'tests' / 'reference'
+GEOM = str(box_surfareas_with_centers_path())
+MEAS = str(MEASUREMENTS_DIR)
 
 
-def _capture(mod, func):
-    """Run a main module with randn->0, capturing each least-squares column it solves."""
-    captured = []
-    orig_least-squares = mod.model_least-squares
-
-    def wrapped(A, b, *a, **k):
-        x = orig_least-squares(A, b, *a, **k)
-        captured.append(np.asarray(x, dtype=float).copy())
-        return x
-
-    saved_randn = np.random.randn
-    mod.model_least-squares = wrapped
-    np.random.randn = lambda *a, **k: (np.zeros(a) if a else 0.0)
-    try:
-        func()
-    finally:
-        mod.model_least-squares = orig_least-squares
-        np.random.randn = saved_randn
-
-    # captured[i] is the log-state solution for ensemble member i
-    return np.column_stack(captured)
+def _run(window):
+    ctx = RunContext.isolated(REF_DIR.parent / '_tmp_ref', runs_root=RUNS_ROOT)
+    result, _ = workflow.analyze(window, ctx, geometry_path=GEOM, measurements_dir=MEAS, perturb=False)
+    return result.log_states
 
 
 def main():
     REF_DIR.mkdir(parents=True, exist_ok=True)
+    sol = _run(AnalysisWindow('1986.75', ('1986.75',)))
+    np.savez(REF_DIR / 'filter_1986.75.npz', sol=sol, strdate='1986.75', kind='filter')
+    print(f'filter 1986.75: {sol.shape}')
 
-    import main_LN
-    sol_filter = _capture(main_LN, lambda: main_LN.main_LN('1986.75'))
-    np.savez(
-        REF_DIR / 'filter_1986.75.npz',
-        sol=sol_filter,
-        strdate='1986.75',
-        kind='filter',
-    )
-    print(f'filter 1986.75: sol shape {sol_filter.shape}')
-
-    import main_KSF_LN
-    sol_smoother = _capture(
-        main_KSF_LN, lambda: main_KSF_LN.main_KSF_LN(['1988.625', '1988.5'])
-    )
-    np.savez(
-        REF_DIR / 'smoother_1988.625_1988.5.npz',
-        sol=sol_smoother,
-        strdates=np.array(['1988.625', '1988.5']),
-        kind='smoother',
-    )
-    print(f'smoother [1988.625,1988.5]: sol shape {sol_smoother.shape}')
+    sol = _run(AnalysisWindow('1988.5', ('1988.625', '1988.5')))
+    np.savez(REF_DIR / 'smoother_1988.625_1988.5.npz', sol=sol,
+             strdates=np.array(['1988.625', '1988.5']), kind='smoother')
+    print(f'smoother [1988.625,1988.5]: {sol.shape}')
 
 
 if __name__ == '__main__':
