@@ -93,6 +93,20 @@ def _cmd_diagnose(args):
     return 0
 
 
+def _cmd_run_cycle(args):
+    from . import cycle
+    config = load_config(args.case)
+    out = Path(args.output) if args.output else _default_output(config, 'cycle')
+    result = cycle.run_cycle(config, out, mode=args.mode, dates=args.dates or None,
+                             perturb=not args.no_perturb, seed=args.seed, force=args.force)
+    print(f'run-cycle {config.case_id}: {result.status} (mode={result.manifest["mode"]})')
+    for step in result.steps:
+        tag = step.get('source', '')
+        print(f'  {step["step"]:<9} {step["date"]:<10} {step["status"]}' + (f'  <- {tag}' if tag else ''))
+    print(f'  outputs: {out}')
+    return 0
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog='poseidon-da', description='POSEIDON ensemble data assimilation')
     p.add_argument('--version', action='version', version=f'poseidon-da {__version__}')
@@ -114,6 +128,17 @@ def build_parser():
         if name == 'run':
             sp.add_argument('--force', action='store_true', help='overwrite a non-empty output directory')
         sp.set_defaults(func=func)
+
+    sc = sub.add_parser('run-cycle', help='run a sequential NODA/filter assimilation-forecast cycle')
+    sc.add_argument('case', help='path to case.toml')
+    sc.add_argument('--output', '-o', default=None, help='output directory')
+    sc.add_argument('--mode', choices=['noda', 'filter', 'smoother'], default=None,
+                    help='cycle mode (default from [cycle] in the config)')
+    sc.add_argument('--dates', nargs='+', default=None, help='override the date sequence')
+    sc.add_argument('--no-perturb', action='store_true', help='deterministic (no perturbations)')
+    sc.add_argument('--seed', type=int, default=None, help='RNG seed')
+    sc.add_argument('--force', action='store_true', help='overwrite a non-empty output directory')
+    sc.set_defaults(func=_cmd_run_cycle)
     return p
 
 

@@ -95,3 +95,21 @@ def test_api_analyze_accepts_numpy_generator(tmp_path):
 def test_layer_depths_from_bdepths_default():
     from poseidon_da.geometry import layer_depths_from_bdepths
     assert layer_depths_from_bdepths([25, 100, 500, 2000]) == [12.5, 62.5, 300.0, 1250.0]
+
+
+def test_cli_version_subprocess(tmp_path):
+    # the installed console entry point must run from an unrelated working directory
+    import subprocess
+    import sys
+    out = subprocess.run([sys.executable, '-m', 'poseidon_da', '--version'],
+                         cwd=tmp_path, capture_output=True, text=True)
+    assert out.returncode == 0 and 'poseidon-da' in out.stdout
+
+
+@requires_data
+def test_cli_validate_subprocess(tmp_path):
+    import subprocess
+    import sys
+    out = subprocess.run([sys.executable, '-m', 'poseidon_da', 'validate', str(EXAMPLE_CASE)],
+                         cwd=tmp_path, capture_output=True, text=True)
+    assert out.returncode == 0 and 'OK' in out.stdout

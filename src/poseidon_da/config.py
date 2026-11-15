@@ -24,6 +24,8 @@ class Config:
     model_executable: Path | None = None
     launcher: list = field(default_factory=list)
     schema_version: int = 1
+    cycle_mode: str = 'filter'
+    cycle_dates: list = field(default_factory=list)
 
 
 def _resolve(base: Path, value) -> Path:
@@ -41,6 +43,7 @@ def load_config(path) -> Config:
     dataset = raw.get('dataset', {})
     analysis = raw.get('analysis', {})
     model = raw.get('model', {})
+    cycle = raw.get('cycle', {})
 
     target = analysis.get('target_time')
     times = list(analysis.get('observation_times', [target] if target else []))
@@ -60,6 +63,8 @@ def load_config(path) -> Config:
         model_executable=_resolve(base, exe) if exe else None,
         launcher=list(model.get('launcher', [])),
         schema_version=int(raw.get('case', {}).get('schema_version', 1)),
+        cycle_mode=cycle.get('mode', 'filter'),
+        cycle_dates=list(cycle.get('dates', [])),
     )
 
 
