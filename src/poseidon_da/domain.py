@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import physical
+
 
 @dataclass(frozen=True)
 class StateLayout:
@@ -63,15 +65,15 @@ class AnalysisResult:
 
     @property
     def concentrations(self) -> np.ndarray:
-        return np.exp(self.log_states)
+        return physical.to_concentration(self.log_states, self.member_ids)
 
     @property
     def geometric_mean(self) -> np.ndarray:
-        return np.exp(np.mean(self.log_states, axis=1))
+        return physical.geometric_mean(self.log_states)
 
     @property
     def arithmetic_mean(self) -> np.ndarray:
-        return np.mean(np.exp(self.log_states), axis=1)
+        return physical.arithmetic_mean(self.log_states)
 
 
 @dataclass

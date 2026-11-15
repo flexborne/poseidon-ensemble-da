@@ -11,6 +11,7 @@ from .covariance import estimate_covariance, localize_covariance
 from .domain import AnalysisResult, AnalysisWindow
 from .geometry import box_levels, layer_depths_from_bdepths, load_box_centers
 from .observations import aggregate_observations
+from .physical import to_concentration
 from .poseidon_io import read_state, write_poseidon, xlswrite
 from .runner import RunContext, find_members
 from .state import build_layout, observation_indices, validate_observation_coords
@@ -116,12 +117,7 @@ def write_restarts(result: AnalysisResult, payload: RestartPayload, ctx: RunCont
     written = []
     for i, member in enumerate(payload.members):
         header, footer, sed = payload.metas[i]
-        conc = np.exp(sol[anl0:, i])
-        if not np.all(np.isfinite(conc) & (conc > 0.0)):
-            bad = int(np.where(~(np.isfinite(conc) & (conc > 0.0)))[0][0])
-            raise FloatingPointError(
-                f'member {member}: non-finite/non-positive analysed concentration at state row {bad} '
-                f'(value {conc[bad]}) — refusing to write restart')
+        conc = to_concentration(sol[anl0:, i:i + 1], member_ids=[member]).ravel()   # guarded log->physical
         ofname = ctx.template_dir(member) / 'Initconc.dat'
         write_poseidon(str(ofname), conc, payload.write_index, payload.bnlev, header, footer, sed)
         written.append(ofname)

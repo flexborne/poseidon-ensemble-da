@@ -170,3 +170,22 @@ def test_run_cycle_rejects_unordered_dates(tmp_path):
     with pytest.raises(ValueError, match='strictly increasing'):
         run_cycle(config, tmp_path / 'out', mode='noda', dates=['2.0', '1.0'],
                   model_runner=lambda *a: None)
+
+
+# ---- 4.5: log->physical conversion is stable and guarded ----------------------
+
+def test_arithmetic_mean_is_overflow_safe():
+    import numpy as np
+    from poseidon_da.physical import arithmetic_mean
+    log_states = np.full((1, 24), 709.0)          # naive mean(exp(x)) overflows to inf
+    mean = arithmetic_mean(log_states)
+    assert np.all(np.isfinite(mean)) and mean[0] > 0
+
+
+def test_to_concentration_reports_member(tmp_path):
+    import numpy as np
+    from poseidon_da.physical import to_concentration
+    log_states = np.zeros((2, 3))
+    log_states[1, 2] = 1e9                         # overflows exp -> inf
+    with pytest.raises(FloatingPointError, match='member m3'):
+        to_concentration(log_states, member_ids=['m1', 'm2', 'm3'])
