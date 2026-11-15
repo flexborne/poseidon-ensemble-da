@@ -98,12 +98,19 @@ def _executable_command(exe_path: Path, launcher=None) -> list:
     raise RuntimeError(f'Cannot run {exe_path}: not on Windows and `wine` not found')
 
 
-def _run_in_pty(argv, cwd) -> int:
+def _pty_supported() -> bool:
+    """PTYs exist only on POSIX; Windows console apps get a real console via subprocess."""
+    return os.name == 'posix' and hasattr(os, 'fork')
+
+
+def _run_in_pty(argv, cwd, log_path=None) -> int:
     """Run argv in cwd under a pseudo-terminal, returning the exit code.
 
     A console program that writes to the terminal device (e.g. a Fortran app using
     CONOUT$) needs a real console; headless `wine` otherwise fails. pty.fork() gives the
-    child its own controlling tty, so this works even with no tty on the parent.
+    child its own controlling tty, so this works even with no tty on the parent. The
+    master fd is always closed and the child always reaped (finally), and the drained
+    output is written to log_path for diagnosis.
     """
     import pty
     pid, fd = pty.fork()
@@ -113,13 +120,25 @@ def _run_in_pty(argv, cwd) -> int:
             os.execvp(argv[0], argv)
         except BaseException:
             os._exit(127)
-    while True:                                    # parent: drain the pty until the child exits
-        try:
-            if not os.read(fd, 4096):
+    chunks = []
+    try:                                           # parent: drain the pty until the child exits
+        while True:
+            try:
+                data = os.read(fd, 4096)
+            except OSError:
                 break
+            if not data:
+                break
+            chunks.append(data)
+    finally:
+        os.close(fd)
+        _, status = os.waitpid(pid, 0)
+    if log_path is not None and chunks:
+        try:
+            Path(log_path).write_bytes(b''.join(chunks))
         except OSError:
-            break
-    return os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
+            pass
+    return os.waitstatus_to_exitcode(status)
 
 
 def run_executable_in_dir(directory, exe_path=None, launcher=None, use_pty=False) -> None:
@@ -128,8 +147,8 @@ def run_executable_in_dir(directory, exe_path=None, launcher=None, use_pty=False
     if not exe_path.exists():
         raise FileNotFoundError(f'POSEIDON executable not found: {exe_path}')
     cmd = _executable_command(exe_path, launcher)
-    if use_pty:                                    # headless console apps (e.g. wine) need a tty
-        rc = _run_in_pty(cmd, str(directory))
+    if use_pty and _pty_supported():               # headless console apps (e.g. wine) need a tty
+        rc = _run_in_pty(cmd, str(directory), log_path=directory / 'poseidon.log')
     else:
         rc = subprocess.run(cmd, cwd=directory).returncode
     if rc != 0:
