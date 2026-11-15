@@ -51,7 +51,7 @@ def test_run_cycle_requires_equal_member_set(tmp_path):
     (runs / '2.0' / '02.hydrol1dep2').mkdir(parents=True)   # extra member on date 2
     config = load_config(EXAMPLE_CASE)
     config.runs_root = runs
-    config.measurements_dir = tmp_path          # no .dat -> diagnose just skipped
+    config.measurements_dir = tmp_path / 'meas'   # distinct dir, no .dat -> diagnose skipped
     called = []
     with pytest.raises(ValueError, match='member set'):
         run_cycle(config, tmp_path / 'out', mode='noda', dates=['1.0', '2.0'],

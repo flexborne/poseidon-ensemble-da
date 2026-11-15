@@ -9,7 +9,8 @@ import pytest
 from conftest import EXAMPLE_CASE, HAS_DATA
 
 from poseidon_da import api
-from poseidon_da.config import load_config
+from poseidon_da.config import load_config, schema_problems, validate
+from poseidon_da.cycle import run_cycle
 
 requires_data = pytest.mark.skipif(not HAS_DATA, reason='experiment archive not present')
 
@@ -118,3 +119,54 @@ def test_run_in_pty_does_not_leak_fds(tmp_path):
                               launcher=[sys.executable, '-c', 'pass'], use_pty=True)
     after = _open_fd_count()
     assert after <= before + 1       # no monotonic growth across repeated runs
+
+
+# ---- 3: validation reports contract violations before computing -----------------
+
+def test_schema_problems_flags_unknown_key_and_table():
+    probs = schema_problems({'analysis': {'gds': 2.0}, 'bogus': {}})
+    assert any('analysis.gds' in p for p in probs)
+    assert any('[bogus]' in p for p in probs)
+
+
+def test_validate_surfaces_schema_issues():
+    config = load_config(EXAMPLE_CASE)
+    config.schema_issues = ['unknown config key analysis.gds']
+    assert 'unknown config key analysis.gds' in validate(config)
+
+
+def test_validate_rejects_negative_first_bdepth():
+    config = load_config(EXAMPLE_CASE)
+    config.bdepths = [-25, 100, 500, 2000]
+    assert any('positive depth boundary' in p for p in validate(config))
+
+
+def test_validate_geometry_rejects_missing_columns(tmp_path):
+    from openpyxl import Workbook
+    from poseidon_da.geometry import validate_geometry
+    path = tmp_path / 'geom.xlsx'
+    wb = Workbook(); ws = wb.active; ws.title = 'Sheet1'
+    ws.append([1, 2, 3])                      # far fewer than the required columns
+    wb.save(path)
+    assert any('columns' in p for p in validate_geometry(path))
+
+
+def _fake_cycle_dataset(tmp_path):
+    config, runs = _fake_dataset(tmp_path)
+    (runs / '2.0' / '01.hydrol1dep1').mkdir(parents=True)
+    config.measurements_dir = tmp_path / 'meas'   # distinct dir, no .dat -> diagnose skipped
+    return config, runs
+
+
+def test_run_cycle_rejects_nonfinite_date(tmp_path):
+    config, runs = _fake_cycle_dataset(tmp_path)
+    with pytest.raises(ValueError, match='finite physical time'):
+        run_cycle(config, tmp_path / 'out', mode='noda', dates=['1.0', 'NaN'],
+                  model_runner=lambda *a: None)
+
+
+def test_run_cycle_rejects_unordered_dates(tmp_path):
+    config, runs = _fake_cycle_dataset(tmp_path)
+    with pytest.raises(ValueError, match='strictly increasing'):
+        run_cycle(config, tmp_path / 'out', mode='noda', dates=['2.0', '1.0'],
+                  model_runner=lambda *a: None)

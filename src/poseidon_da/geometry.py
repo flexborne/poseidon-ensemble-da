@@ -34,15 +34,22 @@ def box_levels() -> np.ndarray:
     return bnlev
 
 
+# Columns the readers depend on: id(0), lat/lon bounds(4..7), level count(8), centre(9,10).
+GEOMETRY_COLUMNS = 11
+
+
 def validate_geometry(geometry_path) -> list:
-    """Problems with the geometry workbook: non-integer or duplicate box ids."""
+    """Problems with the geometry workbook: schema (required columns), box ids, per-box values."""
     try:
         AAA = load_numeric_excel(geometry_path, sheet_name='Sheet1')
     except Exception as exc:
         return [f'cannot read geometry {geometry_path}: {exc}']
-    ids = AAA[:, 0]
-    ids = ids[np.isfinite(ids)]
     problems = []
+    if AAA.shape[1] < GEOMETRY_COLUMNS:
+        return [f'geometry: needs at least {GEOMETRY_COLUMNS} columns (has {AAA.shape[1]})']
+
+    box_rows = AAA[np.isfinite(AAA[:, 0])]
+    ids = box_rows[:, 0]
     if np.any(ids != ids.astype(int)):
         problems.append('geometry: non-integer box id(s)')
     seen, dups = set(), set()
@@ -50,6 +57,12 @@ def validate_geometry(geometry_path) -> list:
         (dups.add(int(v)) if v in seen else seen.add(int(v)))
     if dups:
         problems.append(f'geometry: duplicate box id(s) {sorted(dups)}')
+    if not np.all(np.isfinite(box_rows[:, [4, 5, 6, 7, 8, 9, 10]])):
+        problems.append('geometry: missing lat/lon bounds, level count or centre for some box')
+    else:
+        levels = box_rows[:, 8]
+        if np.any(levels != levels.astype(int)) or np.any(levels < 1):
+            problems.append('geometry: level count (column 8) must be a positive integer for every box')
     return problems
 
 

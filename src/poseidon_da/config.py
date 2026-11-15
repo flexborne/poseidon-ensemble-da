@@ -10,6 +10,27 @@ import numpy as np
 
 SUPPORTED_SCHEMA = 1
 
+# Recognised tables and keys; anything else is reported (catches typos like `gds`).
+SCHEMA = {
+    'case': {'schema_version', 'case_id'},
+    'dataset': {'measurements_dir', 'geometry', 'runs_root'},
+    'analysis': {'target_time', 'observation_times', 'gsd', 'bdepths'},
+    'localization': {'horizontal_m', 'vertical_m', 'temporal_years', 'exclude'},
+    'model': {'executable', 'launcher', 'use_pty'},
+    'cycle': {'mode', 'dates', 'window_years'},
+}
+
+
+def schema_problems(raw: dict) -> list:
+    """Unknown tables/keys in a parsed case TOML, so a mistyped key is reported, not ignored."""
+    problems = []
+    for table, value in raw.items():
+        if table not in SCHEMA:
+            problems.append(f'unknown config table [{table}]')
+        elif isinstance(value, dict):
+            problems += [f'unknown config key {table}.{k}' for k in value if k not in SCHEMA[table]]
+    return problems
+
 # Single source of truth for analysis defaults.
 DEFAULT_GSD = 1.3
 DEFAULT_BDEPTHS = [25, 100, 500, 2000]
@@ -48,6 +69,7 @@ class Config:
     cycle_mode: str = 'filter'
     cycle_dates: list = field(default_factory=list)
     cycle_window_years: float = 0.25
+    schema_issues: list = field(default_factory=list)   # unknown tables/keys found at load time
 
 
 def protected_inputs(config: Config) -> list:
@@ -94,12 +116,13 @@ def load_config(path) -> Config:
         cycle_mode=cycle.get('mode', 'filter'),
         cycle_dates=list(cycle.get('dates', [])),
         cycle_window_years=float(cycle.get('window_years', 0.25)),
+        schema_issues=schema_problems(raw),
     )
 
 
 def validate(config: Config) -> list:
     """Return a list of human-readable problems; empty means the case is runnable."""
-    problems = []
+    problems = list(config.schema_issues)
     if config.schema_version != SUPPORTED_SCHEMA:
         problems.append(f'unsupported schema_version {config.schema_version} (supported: {SUPPORTED_SCHEMA})')
     if not config.target_time:
@@ -121,6 +144,8 @@ def validate(config: Config) -> list:
         problems.append('analysis.bdepths must be a non-empty list')
     elif not all(isinstance(x, (int, float)) and math.isfinite(x) for x in bd):
         problems.append('analysis.bdepths must be finite numbers')
+    elif bd[0] <= 0:
+        problems.append(f'analysis.bdepths must start with a positive depth boundary (got {bd[0]})')
     elif any(bd[i] >= bd[i + 1] for i in range(len(bd) - 1)):
         problems.append(f'analysis.bdepths must be strictly increasing (got {bd})')
     else:

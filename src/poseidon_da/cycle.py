@@ -78,11 +78,13 @@ def _default_model_runner(config, members):
 
 
 def _validate_date_path(d, runs_root: Path) -> None:
-    """A cycle date must be numeric AND a safe single path component inside runs_root."""
+    """A cycle date must be a finite physical time AND a safe single path component in runs_root."""
     try:
-        float(d)
+        t = float(d)
     except (TypeError, ValueError):
         raise ValueError(f'cycle date {d!r} is not numeric')
+    if not np.isfinite(t):
+        raise ValueError(f'cycle date {d!r} is not a finite physical time')
     if d in ('', '.', '..') or '/' in d or '\\' in d or os.sep in d:
         raise ValueError(f'cycle date {d!r} is not a safe path component')
     if (runs_root / d).resolve().parent != runs_root.resolve():
@@ -186,7 +188,10 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
     # ---- validate everything before any write ----
     assert_safe_dest(output_dir, protected_inputs(config))          # never overwrite the dataset (R2.1)
     for d in dates:
-        _validate_date_path(d, runs_root)                           # numeric + safe path component (R2)
+        _validate_date_path(d, runs_root)                           # finite time + safe path component (R2)
+    times = [float(d) for d in dates]
+    if any(times[i] >= times[i + 1] for i in range(len(times) - 1)):
+        raise ValueError(f'cycle dates must be strictly increasing in physical time (got {dates})')
     plan = plan_cycle(mode, dates, config.measurements_dir) if mode in ('noda', 'filter') else None
     minind = maxind = None
     if mode == 'smoother':
