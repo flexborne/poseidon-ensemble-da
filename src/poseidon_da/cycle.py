@@ -184,9 +184,8 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
               perturb=True, seed=None, force=False) -> RunResult:
     """Run a NODA / filter / smoother cycle over a date sequence, producing a provenance manifest.
 
-    The whole plan (mode, numeric and path-safe dates, existing directories, an identical ordered
-    member set on every date) is validated BEFORE anything is written, and the run is built in a
-    staging directory and published atomically on success.
+    Everything (mode, finite path-safe ascending dates, existing dirs, an identical member set on
+    every date) is validated before any write; the run is staged and published atomically.
     """
     from . import __version__
     mode = mode or config.cycle_mode

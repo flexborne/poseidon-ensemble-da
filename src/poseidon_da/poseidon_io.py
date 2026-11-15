@@ -9,12 +9,10 @@ from openpyxl import Workbook, load_workbook
 
 
 def read_poseidon(pfile, bnlev, validate=True):
-    """Read and validate a POSEIDON output file (lastconc.xls).
+    """Read a POSEIDON state file -> (arr[box,level], header, footer, sed[box,2]).
 
-    Returns arr (concentrations per box x level), header, footer (lines kept
-    unchanged) and sed (sediments, 2 columns). With validate=True a missing or
-    duplicated box row, or a non-positive/non-finite active concentration, raises
-    ValueError instead of silently leaving a zero or overwriting a value.
+    With validate=True a missing/duplicated box row or a non-positive/non-finite active
+    concentration raises ValueError rather than being silently accepted.
     """
     Nbox = len(bnlev) - 1
     MaxLev = int(np.max(bnlev))
@@ -79,12 +77,8 @@ def extract_physical_time(footer):
 
 
 def read_state(pfile, bnlev, expected_time, time_tol: float = 1e-6):
-    """Read a POSEIDON state and enforce the physical-time contract (one path for all callers).
-
-    Requires a finite stamped physical time that matches `expected_time`; a missing,
-    non-finite or mismatched time is rejected, so a mislabelled directory/file can never
-    pass as data for another date. Returns (arr, header, footer, sed).
-    """
+    """read_poseidon plus the physical-time contract: the stamped time must be finite and
+    match expected_time, so a mislabelled file can never pass as data for another date."""
     arr, header, footer, sed = read_poseidon(pfile, bnlev)
     t = extract_physical_time(footer)
     if t is None or not np.isfinite(t):
@@ -95,12 +89,8 @@ def read_state(pfile, bnlev, expected_time, time_tol: float = 1e-6):
 
 
 def write_poseidon(fname, vect, Lind, bnlev, header, footer, sed):
-    """Write a state vector in POSEIDON format (Initconc.dat) for model restart.
-
-    Header, footer and sediments are carried over unchanged; values come from
-    vect via the 1-based indices in Lind (a single-date grid or a window
-    analysis-date grid).
-    """
+    """Write a state vector as POSEIDON Initconc.dat; header/footer/sediments are carried over
+    unchanged, values come from vect via the 1-based indices in Lind."""
     vect = list(vect)
     path = Path(fname)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -119,10 +109,8 @@ def write_poseidon(fname, vect, Lind, bnlev, header, footer, sed):
 
 
 def load_numeric_excel(path_like, sheet_name=None) -> np.ndarray:
-    """Read numeric data from a named Excel sheet (or the active one); empty -> NaN.
-
-    A missing named sheet raises KeyError instead of silently reading the wrong one.
-    """
+    """Read a named Excel sheet (or the active one) as a float array; empty cells -> NaN,
+    a missing named sheet raises KeyError."""
     path = Path(path_like)
     wb = load_workbook(path, data_only=True, read_only=True)
     if sheet_name is not None:

@@ -53,10 +53,9 @@ def build_manifest(config, result, package_version: str, steps, *, localization_
                    dates=None, member_order=None, mode=None, window_years=None) -> dict:
     """One manifest builder for every operation (analyze / run / diagnose / cycle).
 
-    Records versions, normalized config and per-step provenance, and hashes the actually-read
-    inputs: geometry, the measurement file of each date, and every ensemble state (lastconc.xls)
-    of the hashed dates, so each step's inputs are identifiable without storing ensemble copies.
-    `dates`/`member_order` default to the single-window analysis (result required if omitted).
+    Records versions, config, per-step provenance and input checksums (geometry + each date's
+    measurement file and ensemble states), so a step's inputs are identifiable without storing
+    ensemble copies. `dates`/`member_order` default to the single-window analysis (needs result).
     """
     import scipy
 

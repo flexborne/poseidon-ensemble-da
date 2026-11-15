@@ -7,11 +7,8 @@ from .domain import StateLayout
 
 
 def validate_observation_coords(brefnum, breflev, bnlev) -> None:
-    """Reject observations whose (box, level) is not an existing physical coordinate.
-
-    Checked against the domain (bnlev) BEFORE the layout is built, so a non-existent
-    coordinate can never be materialized and later mistaken for a valid one.
-    """
+    """Reject observations whose (box, level) is not a real coordinate, checked against bnlev
+    before the layout is built."""
     brefnum = np.asarray(brefnum).ravel()
     breflev = np.asarray(breflev).ravel()
     Nb = len(bnlev) - 1
@@ -27,13 +24,8 @@ def validate_observation_coords(brefnum, breflev, bnlev) -> None:
 
 
 def build_layout(bnlev, brefnum=None, breflev=None, nobs_per_date=None) -> StateLayout:
-    """State-vector layout for an analysis window (a single date is a one-date window).
-
-    The state holds the observed boxes on the earlier dates, then the full box grid on
-    the analysis (last) date. With no observation arguments it is a single-date layout
-    (the full grid only). lind_extract maps the analysis-date grid to a 1-based index
-    for writing a restart.
-    """
+    """State-vector layout for an analysis window: observed boxes on the earlier dates, then the
+    full box grid on the analysis (last) date. No observation args -> single-date (full grid)."""
     brefnum = np.asarray(brefnum).ravel() if brefnum is not None else np.empty(0, int)
     breflev = np.asarray(breflev).ravel() if breflev is not None else np.empty(0, int)
     nobs_per_date = list(nobs_per_date) if nobs_per_date else [0]
@@ -68,11 +60,8 @@ def build_layout(bnlev, brefnum=None, breflev=None, nobs_per_date=None) -> State
 
 
 def observation_indices(brefnum, breflev, layout: StateLayout) -> np.ndarray:
-    """0-based state rows observed by H (a pure gather over the validated layout).
-
-    Returns the index of each observation's state component; raises if an observation
-    maps to a non-existent component (Lind == 0), so a bad input cannot silently wrap.
-    """
+    """0-based state row observed by H for each observation; raises if one maps to a
+    non-existent component (Lind == 0) rather than silently wrapping."""
     brefnum = np.asarray(brefnum).ravel()
     breflev = np.asarray(breflev).ravel()
     Lind, Tind = layout.Lind, layout.Tind

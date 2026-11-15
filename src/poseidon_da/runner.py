@@ -96,11 +96,9 @@ def _pty_supported() -> bool:
 def _run_in_pty(argv, cwd, log_path=None) -> int:
     """Run argv in cwd under a pseudo-terminal, returning the exit code.
 
-    A console program that writes to the terminal device (e.g. a Fortran app using
-    CONOUT$) needs a real console; headless `wine` otherwise fails. pty.fork() gives the
-    child its own controlling tty, so this works even with no tty on the parent. The
-    master fd is always closed and the child always reaped (finally), and the drained
-    output is written to log_path for diagnosis.
+    A console app writing to the terminal device (e.g. a Fortran app using CONOUT$) needs a real
+    console, which headless `wine` lacks; pty.fork() gives the child its own tty. The master fd is
+    always closed and the child reaped (finally), and drained output goes to log_path.
     """
     import pty
     pid, fd = pty.fork()
@@ -149,10 +147,8 @@ def run_poseidon_all(date_dir, members=None, expected_members=None, exe_path=Non
                      launcher=None, expected_time=None, bnlev=None, use_pty=False) -> None:
     """Run POSEIDON in every member folder of a date, verifying a FRESH output.
 
-    Any pre-existing lastconc.xls is removed before the run, so a stale file can never
-    be mistaken for the new forecast. After the run the output must reappear; when
-    bnlev is given it is parsed (structure check) and, when expected_time is given, its
-    stamped physical time must match.
+    Any pre-existing lastconc.xls is deleted first (a stale file can't pass as the forecast);
+    the output must reappear and, when bnlev/expected_time are given, parse and carry that time.
     """
     from .poseidon_io import read_poseidon, read_state
 

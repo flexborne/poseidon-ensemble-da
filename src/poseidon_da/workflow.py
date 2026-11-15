@@ -139,11 +139,8 @@ def write_outputs(result: AnalysisResult, payload: RestartPayload, ctx: RunConte
 
 
 def write_forecast_diagnostics(config, ctx: RunContext, date, bnlev=None):
-    """Compare the ensemble forecast at `date` against observations (no assimilation).
-
-    Writes out_<date>.xlsx with an obs sheet, one sim column per member, and the
-    arithmetic ensemble mean. Shared by the `diagnose` command and the cycle.
-    """
+    """Forecast-vs-observation comparison at `date` (no assimilation): write out_<date>.xlsx
+    with an obs sheet, a sim column per member and the arithmetic mean. Used by diagnose + cycle."""
     if bnlev is None:
         bnlev = box_levels()
     geometry = load_geometry(config.geometry)
