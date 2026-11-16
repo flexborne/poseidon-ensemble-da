@@ -1,7 +1,6 @@
 """POSEIDON text format and Excel I/O (the only openpyxl-aware module)."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
