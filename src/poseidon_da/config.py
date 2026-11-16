@@ -191,7 +191,7 @@ def validate_parameters(config: Config) -> list:
         problems.append(f'analysis.gsd must be a finite value > 1 (got {config.gsd})')
     loc = config.localization
     for key in ('horizontal_m', 'vertical_m', 'temporal_years'):
-        if key in loc and not (math.isfinite(loc[key]) and loc[key] > 0):
+        if key in loc and not (math.isfinite(loc[key]) and loc[key] > 0):   # partial dicts are completed later
             problems.append(f'localization.{key} must be a finite positive value')
     problems += _check_bdepths(config.bdepths)
     if not config.geometry.exists():
@@ -221,14 +221,6 @@ def validate(config: Config) -> list:
 
 
 def validate_diagnose(config: Config, date) -> list:
-    """Only what diagnose needs: bdepths, geometry/measurements and the chosen date's inputs."""
-    problems = []
-    if config.schema_version != SUPPORTED_SCHEMA:
-        problems.append(f'unsupported schema_version {config.schema_version} (supported: {SUPPORTED_SCHEMA})')
-    problems += _check_bdepths(config.bdepths)
-    if not config.geometry.exists():
-        problems.append(f'geometry file not found: {config.geometry}')
-    if not config.measurements_dir.is_dir():
-        problems.append(f'measurements_dir not found: {config.measurements_dir}')
-    problems += _check_date_inputs(config, date)
-    return problems
+    """Diagnose validates the shared parameters plus only the one date it uses (not every
+    observation_times entry)."""
+    return validate_parameters(config) + _check_date_inputs(config, date)

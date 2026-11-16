@@ -9,7 +9,7 @@ import pytest
 from conftest import requires_data, EXAMPLE_CASE
 
 from poseidon_da import api
-from poseidon_da.config import load_config, schema_problems, validate
+from poseidon_da.config import load_config, validate
 from poseidon_da.cycle import run_cycle
 
 
@@ -25,23 +25,16 @@ def _fake_dataset(tmp_path):
     return config, runs
 
 
-def test_run_refuses_output_equal_to_dataset(tmp_path):
+@pytest.mark.parametrize('pick_output', [
+    lambda runs: runs,                       # equal to the dataset
+    lambda runs: runs / '1.0' / 'results',   # inside the dataset
+    lambda runs: runs.parent,                # containing the dataset
+])
+def test_run_refuses_output_overlapping_dataset(tmp_path, pick_output):
     config, runs = _fake_dataset(tmp_path)
     with pytest.raises(ValueError, match='overlaps a protected input'):
-        api.run(config, runs, force=True)
+        api.run(config, pick_output(runs), force=True)
     assert (runs / '1.0' / '01.hydrol1dep1' / 'lastconc.xls').read_text() == 'precious\n'
-
-
-def test_run_refuses_output_inside_dataset(tmp_path):
-    config, runs = _fake_dataset(tmp_path)
-    with pytest.raises(ValueError, match='overlaps a protected input'):
-        api.run(config, runs / '1.0' / 'results', force=True)
-
-
-def test_run_refuses_output_containing_dataset(tmp_path):
-    config, runs = _fake_dataset(tmp_path)
-    with pytest.raises(ValueError, match='overlaps a protected input'):
-        api.run(config, runs.parent, force=True)
 
 
 def test_run_cycle_refuses_output_equal_to_dataset(tmp_path):
@@ -59,19 +52,9 @@ def test_run_cycle_refuses_output_equal_to_dataset(tmp_path):
 def test_configs_do_not_share_localization_exclude():
     first = load_config(EXAMPLE_CASE)
     second = load_config(EXAMPLE_CASE)
-    assert first.localization is not second.localization
-    # exclude is an immutable tuple, so it cannot be mutated in place at all
-    assert isinstance(first.localization['exclude'], tuple)
+    assert first.localization is not second.localization                 # independent dicts
+    assert isinstance(first.localization['exclude'], tuple)              # TOML list coerced to an immutable tuple
     assert isinstance(second.localization['exclude'], tuple)
-
-
-def test_default_localization_exclude_is_immutable():
-    from poseidon_da.config import normalize_localization
-    a = normalize_localization()
-    b = normalize_localization()
-    assert a is not b and a['exclude'] == b['exclude']
-    assert isinstance(a['exclude'], tuple)                 # immutable, cannot be corrupted in place
-    assert normalize_localization({'exclude': [1, 2, 3]})['exclude'] == (1, 2, 3)   # list override coerced
 
 
 # ---- 2.3: analyze publishes atomically, never a mix of two runs ---------------
@@ -159,12 +142,6 @@ def test_run_in_pty_does_not_leak_fds(tmp_path):
 
 
 # ---- 3: validation reports contract violations before computing -----------------
-
-def test_schema_problems_flags_unknown_key_and_table():
-    probs = schema_problems({'analysis': {'gds': 2.0}, 'bogus': {}})
-    assert any('analysis.gds' in p for p in probs)
-    assert any('[bogus]' in p for p in probs)
-
 
 def test_load_config_rejects_unknown_key(tmp_path):
     case = tmp_path / 'case.toml'
