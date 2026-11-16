@@ -34,7 +34,7 @@ class CycleStep:
     kind: str                          # 'analyze' | 'forecast' | 'diagnose'
     date: str                          # analyze: target date; forecast/diagnose: that date
     window: tuple | None = None        # analyze: observation dates (target last; len 1 == filter)
-    window_index: list | None = None   # analyze: [minind, maxind] of a smoother window
+    window_index: list | None = None   # analyze: [first, last] 0-based inclusive smoother-window bounds
     restart_kind: str | None = None    # forecast: 'analysis' (restart file) | 'restart' (prior lastconc)
     source: str | None = None          # forecast: date whose state seeds this one
     has_measurement: bool = False      # diagnose: a measurement file exists for this date
