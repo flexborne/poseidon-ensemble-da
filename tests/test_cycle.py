@@ -36,12 +36,12 @@ def test_plan_cycle_noda_order(tmp_path):
 
 
 def test_derive_windows():
-    # +/-0.25 yr window selection over the standard date sequence
+    # +/-0.25 yr window selection (0-based inclusive indices) over the standard date sequence
     dates = ['1986.75', '1987.5', '1988.25', '1988.5', '1988.625',
              '1988.75', '1988.85', '1990.75', '1991.75', '2007.5']
-    minind, maxind = derive_windows(dates, 0.25)
-    assert minind == [1, 2, 3, 3, 4, 4, 5, 8, 9, 10]
-    assert maxind == [1, 2, 4, 6, 7, 7, 7, 8, 9, 10]
+    first, last = derive_windows(dates, 0.25)
+    assert first == [0, 1, 2, 2, 3, 3, 4, 7, 8, 9]
+    assert last == [0, 1, 3, 5, 6, 6, 6, 7, 8, 9]
 
 
 def test_plan_cycle_smoother_order(tmp_path):

@@ -53,17 +53,17 @@ class CycleStep:
 
 
 def derive_windows(dates, window_years=0.25):
-    """+/- window_years assimilation windows as 1-based (minind, maxind) over sorted dates.
+    """+/- window_years assimilation windows as 0-based inclusive (first, last) index lists.
 
-    minind[i]/maxind[i] are the earliest/latest date indices whose physical time lies within
+    first[i]/last[i] are the earliest/latest date indices whose physical time lies within
     window_years of date i.
     """
     t = [float(d) for d in dates]
     n = len(t)
     tol = 1e-9
-    minind = [1 + min(j for j in range(n) if t[j] >= t[i] - window_years - tol) for i in range(n)]
-    maxind = [1 + max(j for j in range(n) if t[j] <= t[i] + window_years + tol) for i in range(n)]
-    return minind, maxind
+    first = [min(j for j in range(n) if t[j] >= t[i] - window_years - tol) for i in range(n)]
+    last = [max(j for j in range(n) if t[j] <= t[i] + window_years + tol) for i in range(n)]
+    return first, last
 
 
 def _diagnose_step(date, measurements_dir) -> CycleStep:
@@ -72,15 +72,15 @@ def _diagnose_step(date, measurements_dir) -> CycleStep:
                      has_measurement=(Path(measurements_dir) / f'{date}.dat').exists())
 
 
-def _analyze_step(mode, dates, t, minind, maxind) -> CycleStep:
+def _analyze_step(mode, dates, t, first, last) -> CycleStep:
     """Analysis step for target date index t: a single-date (filter) or +/- neighbour (smoother) window."""
     cur = dates[t]
-    if mode == 'filter' or (minind[t] == t + 1 and maxind[t] == t + 1):   # trivial window -> filter
+    if mode == 'filter' or (first[t] == t and last[t] == t):     # trivial window -> filter
         return CycleStep('analyze', cur, window=(cur,))
-    lo, hi = minind[t], maxind[t]                                         # 1-based inclusive bounds
-    meas = [dates[j - 1] for j in range(lo, t + 1)]                       # past dates
-    meas += [dates[j - 1] for j in range(t + 2, hi + 1)]                  # future dates
-    meas += [cur]                                                         # target is always last
+    lo, hi = first[t], last[t]                                   # 0-based inclusive window bounds
+    meas = [dates[j] for j in range(lo, t)]                      # past dates
+    meas += [dates[j] for j in range(t + 1, hi + 1)]            # future dates
+    meas += [cur]                                                # target is always last
     return CycleStep('analyze', cur, window=tuple(meas), window_index=[lo, hi])
 
 
@@ -88,20 +88,20 @@ def plan_cycle(mode: str, dates, measurements_dir, window_years=0.25) -> list:
     """Deterministic analyze/forecast/diagnose plan for any mode, built in one pass over the dates.
 
     For each target date: optionally analyse it, then forecast forward to the right edge of the
-    horizon (the next date for noda/filter, maxind(next) for smoother), seeding the first leg from
-    the analysis (or from the previous state for noda) and diagnosing that first forecast.
+    horizon (the next date for noda/filter, the next window's last date for smoother), seeding the
+    first leg from the analysis (or from the previous state for noda) and diagnosing that forecast.
     """
     if mode not in ('noda', 'filter', 'smoother'):
         raise ValueError(f'unknown cycle mode {mode!r}')
     dates = list(dates)
-    minind, maxind = derive_windows(dates, window_years) if mode == 'smoother' else (None, None)
+    first, last = derive_windows(dates, window_years) if mode == 'smoother' else (None, None)
 
     steps = []
     for t in range(len(dates) - 1):                          # target date index
         cur = dates[t]
         if mode != 'noda':
-            steps.append(_analyze_step(mode, dates, t, minind, maxind))
-        horizon_end = maxind[t + 1] if mode == 'smoother' else t + 2    # exclusive date index
+            steps.append(_analyze_step(mode, dates, t, first, last))
+        horizon_end = last[t + 1] + 1 if mode == 'smoother' else t + 2    # exclusive date index
         for f in range(t + 1, horizon_end):
             if f == t + 1:
                 steps.append(CycleStep('forecast', dates[f],
