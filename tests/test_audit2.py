@@ -294,3 +294,19 @@ def test_cli_validate_bad_case_returns_1(tmp_path):
     case = tmp_path / 'case.toml'
     case.write_text('[case]\nschema_version = 1\ncase_id = "x"\n[analysis]\ngsd = 0.5\n')
     assert cli.main(['validate', str(case)]) == 1   # invalid case -> non-zero exit, no traceback
+
+
+def test_validate_diagnose_ignores_gsd_and_localization():
+    # diagnose runs no Kalman update, so it must not require a valid gsd/localization
+    from poseidon_da.config import validate_diagnose
+    config = load_config(EXAMPLE_CASE)
+    config.gsd = 1.0                                   # invalid for analysis, irrelevant to diagnose
+    config.localization = {'horizontal_m': -1.0}       # invalid, irrelevant to diagnose
+    problems = validate_diagnose(config, config.target_time)
+    assert not any('gsd' in p or 'localization' in p for p in problems)
+
+
+def test_run_executable_requires_exe_path(tmp_path):
+    from poseidon_da.runner import run_executable_in_dir
+    with pytest.raises(ValueError, match='no model executable'):
+        run_executable_in_dir(tmp_path, exe_path=None)

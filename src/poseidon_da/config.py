@@ -178,21 +178,11 @@ def _check_date_inputs(config, date) -> list:
     return problems
 
 
-def validate_parameters(config: Config) -> list:
-    """Analysis parameters + input existence (cheap; file *content* is checked when read).
-
-    Covers schema version, gsd, localization, bdepths, and that geometry / measurements exist.
-    Shared by the analysis (analyze/run) and the cycle, which both run the Kalman update.
-    """
+def _check_common(config: Config) -> list:
+    """Schema version, bdepths and that geometry/measurements exist — needed by every operation."""
     problems = []
     if config.schema_version != SUPPORTED_SCHEMA:
         problems.append(f'unsupported schema_version {config.schema_version} (supported: {SUPPORTED_SCHEMA})')
-    if not (math.isfinite(config.gsd) and config.gsd > 1.0):
-        problems.append(f'analysis.gsd must be a finite value > 1 (got {config.gsd})')
-    loc = config.localization
-    for key in ('horizontal_m', 'vertical_m', 'temporal_years'):
-        if key in loc and not (math.isfinite(loc[key]) and loc[key] > 0):   # partial dicts are completed later
-            problems.append(f'localization.{key} must be a finite positive value')
     problems += _check_bdepths(config.bdepths)
     if not config.geometry.exists():
         problems.append(f'geometry file not found: {config.geometry}')
@@ -201,11 +191,23 @@ def validate_parameters(config: Config) -> list:
     return problems
 
 
-def validate(config: Config) -> list:
-    """Full single-window validation (the `validate` command, analyze/run entry); empty = runnable.
+def validate_parameters(config: Config) -> list:
+    """Assimilation parameters: the common checks plus gsd and localization (analyze/run/cycle).
 
-    Geometry *content* is validated when load_geometry reads it, not here.
+    Cheap only; file *content* is validated when load_geometry/read_state read it.
     """
+    problems = _check_common(config)
+    if not (math.isfinite(config.gsd) and config.gsd > 1.0):
+        problems.append(f'analysis.gsd must be a finite value > 1 (got {config.gsd})')
+    loc = config.localization
+    for key in ('horizontal_m', 'vertical_m', 'temporal_years'):
+        if key in loc and not (math.isfinite(loc[key]) and loc[key] > 0):   # partial dicts are completed later
+            problems.append(f'localization.{key} must be a finite positive value')
+    return problems
+
+
+def validate(config: Config) -> list:
+    """Full single-window validation (the `validate` command, analyze/run entry); empty = runnable."""
     problems = validate_parameters(config)
     if not config.target_time:
         problems.append('analysis.target_time is required')
@@ -221,6 +223,6 @@ def validate(config: Config) -> list:
 
 
 def validate_diagnose(config: Config, date) -> list:
-    """Diagnose validates the shared parameters plus only the one date it uses (not every
-    observation_times entry)."""
-    return validate_parameters(config) + _check_date_inputs(config, date)
+    """Diagnose needs only the common inputs + the one date it uses — not gsd/localization or the
+    other observation_times (it runs no Kalman update)."""
+    return _check_common(config) + _check_date_inputs(config, date)

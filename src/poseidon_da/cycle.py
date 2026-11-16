@@ -9,6 +9,7 @@ window degenerates to the filter), then forecasts far enough ahead to feed the n
 """
 from __future__ import annotations
 
+import hashlib
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +22,7 @@ from .geometry import box_levels
 from .config import (normalize_localization, protected_inputs, raise_if_invalid,
                      resolve_perturbation, validate_parameters)
 from .publish import assert_safe_dest, staged_publish
-from .results import build_manifest, export_result, write_manifest
+from .results import _checksum, build_manifest, export_result, write_manifest
 from .runner import (RunContext, copy_lastconc_to_initconc, find_members,
                      publish_initconc, run_poseidon_all)
 
@@ -139,13 +140,27 @@ def _cycle_time(d, runs_root: Path) -> float:
 
 # ---- execution -----------------------------------------------------------------
 
+def _window_state_hashes(ctx, window, members) -> dict:
+    """Per-date sha256 over the ensemble states actually read for this window (the work-dir copies,
+    including any produced by earlier forecasts), so each analysis links to its real inputs — not
+    just the manifest's archive hashes."""
+    out = {}
+    for d in window:
+        h = hashlib.sha256()
+        for m in sorted(members):
+            h.update(_checksum(ctx.date_dir(d) / m / 'lastconc.xls').encode())
+        out[d] = h.hexdigest()
+    return out
+
+
 def _run_analyze(step, config, ctx, perturb, rng, staging):
     result, data = workflow.analyze(AnalysisWindow(step.date, step.window), ctx, config,
                                     perturb=perturb, rng=rng)
     workflow.write_restarts(result, data, ctx)
     export_result(result, staging / 'analyses' / step.date)
     return {'step': 'analyze', 'date': step.date, 'status': 'ok',
-            'provenance': step.provenance, 'diagnostics': result.diagnostics}
+            'provenance': step.provenance, 'diagnostics': result.diagnostics,
+            'inputs_sha256': _window_state_hashes(ctx, step.window, result.member_ids)}
 
 
 def _execute(plan, config, ctx, member_set, perturb, rng, runner, bnlev, staging):

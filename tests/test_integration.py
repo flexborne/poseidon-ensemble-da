@@ -109,6 +109,9 @@ def test_run_cycle_filter_with_mock_model(mini_case, tmp_path):
     assert res.status == 'ok'
     kinds = [(s['step'], s['date']) for s in res.steps]
     assert kinds == [('analyze', '2000.0'), ('forecast', '2000.5'), ('diagnose', '2000.5')]
+    # the analyze step records a hash of the states it actually used (not only the archive)
+    analyze = next(s for s in res.steps if s['step'] == 'analyze')
+    assert set(analyze['inputs_sha256']) == {'2000.0'} and analyze['inputs_sha256']['2000.0']
 
 
 def test_cycle_atomic_on_model_failure(mini_case, tmp_path):

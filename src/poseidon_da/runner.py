@@ -7,8 +7,6 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import paths
-
 
 @dataclass(frozen=True)
 class RunContext:
@@ -128,7 +126,9 @@ def _run_in_pty(argv, cwd, log_path=None) -> int:
 
 def run_executable_in_dir(directory, exe_path=None, launcher=None, use_pty=False) -> None:
     directory = Path(directory)
-    exe_path = Path(exe_path) if exe_path else paths.poseidon_exe_path()
+    if exe_path is None:
+        raise ValueError('no model executable: set [model].executable in the case')
+    exe_path = Path(exe_path)
     if not exe_path.exists():
         raise FileNotFoundError(f'POSEIDON executable not found: {exe_path}')
     cmd = _executable_command(exe_path, launcher)
