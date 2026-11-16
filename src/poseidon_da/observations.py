@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .geometry import box_levels
+
 SURFACE_DEPTH_M = 10.0
 
 
@@ -32,9 +34,9 @@ def aggregate_observations(dat_path, geometry, bdepths, expected_time=None, time
     must be finite and positive before box-averaging. Returns a dict with values/brefnum/
     breflev as 1-D (p,) arrays.
     """
+    bnlev = box_levels()                                # single source of truth for per-box level counts
     boxnum, boxlats, boxlons = geometry.boxnum, geometry.boxlats, geometry.boxlons
-    boxnlev = geometry.boxnlev
-    Nbox, Maxlev = geometry.nbox, geometry.maxlev
+    Nbox, Maxlev = geometry.nbox, int(bnlev.max())
 
     data = np.atleast_2d(np.loadtxt(str(dat_path), skiprows=1))
     stime, slon, slat, sval = data[:, 0], data[:, 1], data[:, 2], data[:, 3]
@@ -59,7 +61,7 @@ def aggregate_observations(dat_path, geometry, bdepths, expected_time=None, time
         if len(bind) > 4:
             raise ValueError(f'measurement {i + 1} belongs to more than 4 boxes')
         for bj in bind:
-            blev = _vertical_level(boxnlev[bj], bdepths)        # per-box level count
+            blev = _vertical_level(bnlev[int(boxnum[bj])], bdepths)   # per-box level count
             box_st[(bj, blev - 1)].append(sval[i])
 
     values, brefnum, breflev = [], [], []

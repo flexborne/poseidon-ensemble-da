@@ -36,34 +36,30 @@ def box_levels() -> np.ndarray:
     return bnlev
 
 
-# Columns the readers depend on: id(0), lat/lon bounds(4..7), level count(8), centre(9,10).
+# Columns the readers depend on: id(0), lat/lon bounds(4..7), centre(9,10). Per-box level
+# counts come from box_levels() (the single source of truth), not from the workbook.
 GEOMETRY_COLUMNS = 11
 
 
 @dataclass(frozen=True)
 class Geometry:
-    """Box geometry read once from the workbook: ids, lat/lon bounds, level counts, centres."""
+    """Box geometry read once from the workbook: ids, lat/lon bounds, centres."""
 
     boxnum: np.ndarray       # (Nbox,) 1-based box ids
     boxlats: np.ndarray      # (Nbox, 2) [south, north]
     boxlons: np.ndarray      # (Nbox, 2) [west, east]
-    boxnlev: np.ndarray      # (Nbox,) vertical level count
     centers: dict            # {0-based box index -> (lat, lon)} centre of mass
 
     @property
     def nbox(self) -> int:
         return int(self.boxnum.shape[0])
 
-    @property
-    def maxlev(self) -> int:
-        return int(self.boxnlev.max())
-
 
 def load_geometry(geometry_path) -> Geometry:
     """Read and validate the geometry workbook (Sheet1) in one call -> Geometry, or raise ValueError.
 
-    Checks the required columns, integer and unique box ids, and finite per-box lat/lon bounds,
-    positive-integer level counts and centres — so a reader never meets an unvalidated workbook.
+    Checks the required columns, integer and unique box ids, and finite per-box lat/lon bounds and
+    centres — so a reader never meets an unvalidated workbook.
     """
     rows = load_numeric_excel(geometry_path, sheet_name='Sheet1')
     if rows.shape[1] < GEOMETRY_COLUMNS:
@@ -74,13 +70,9 @@ def load_geometry(geometry_path) -> Geometry:
         raise ValueError('geometry: non-integer box id(s)')
     if len(set(ids.astype(int))) != len(ids):
         raise ValueError('geometry: duplicate box id(s)')
-    if not np.all(np.isfinite(rows[:, [4, 5, 6, 7, 8, 9, 10]])):
-        raise ValueError('geometry: missing lat/lon bounds, level count or centre for some box')
-    levels = rows[:, 8]
-    if np.any(levels != levels.astype(int)) or np.any(levels < 1):
-        raise ValueError('geometry: level count (column 8) must be a positive integer for every box')
+    if not np.all(np.isfinite(rows[:, [4, 5, 6, 7, 9, 10]])):
+        raise ValueError('geometry: missing lat/lon bounds or centre for some box')
 
     boxnum = ids
     centers = {int(boxnum[i]) - 1: (float(rows[i, 9]), float(rows[i, 10])) for i in range(len(boxnum))}
-    return Geometry(boxnum=boxnum, boxlats=rows[:, [4, 5]], boxlons=rows[:, [6, 7]],
-                    boxnlev=levels.astype(int), centers=centers)
+    return Geometry(boxnum=boxnum, boxlats=rows[:, [4, 5]], boxlons=rows[:, [6, 7]], centers=centers)
