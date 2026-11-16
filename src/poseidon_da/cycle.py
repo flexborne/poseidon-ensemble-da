@@ -140,10 +140,8 @@ def _cycle_time(d, runs_root: Path) -> float:
 # ---- execution -----------------------------------------------------------------
 
 def _run_analyze(step, config, ctx, perturb, rng, staging):
-    result, data = workflow.analyze(
-        AnalysisWindow(step.date, step.window), ctx, geometry_path=str(config.geometry),
-        measurements_dir=str(config.measurements_dir), gsd=config.gsd,
-        localization=config.localization, bdepths=config.bdepths, perturb=perturb, rng=rng)
+    result, data = workflow.analyze(AnalysisWindow(step.date, step.window), ctx, config,
+                                    perturb=perturb, rng=rng)
     workflow.write_restarts(result, data, ctx)
     export_result(result, staging / 'analyses' / step.date)
     return {'step': 'analyze', 'date': step.date, 'status': 'ok',
@@ -189,9 +187,7 @@ def run_cycle(config, output_dir, *, mode=None, dates=None, model_runner=None,
     dates = list(dates or config.cycle_dates)
     if len(dates) < 2:
         raise ValueError('cycle requires at least two dates')
-    if mode not in ('noda', 'filter', 'smoother'):
-        raise ValueError(f'unknown cycle mode {mode!r}')
-    runs_root = Path(config.runs_root)
+    runs_root = Path(config.runs_root)                              # mode is validated by plan_cycle below
 
     # ---- validate everything before any write ----
     assert_safe_dest(output_dir, protected_inputs(config))          # never overwrite the dataset (R2.1)

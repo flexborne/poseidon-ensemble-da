@@ -41,15 +41,14 @@ def _perturbed_obs(y, M, sigma, perturb, rng):
     return Y
 
 
-def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measurements_dir,
-            gsd, localization, bdepths, perturb=True, rng=None):
+def analyze(window: AnalysisWindow, ctx: RunContext, config, *, perturb=True, rng=None):
     """Run one analysis (a single-date window is the filter). Returns (AnalysisResult, WriteData).
 
-    Parameters are already finalized by the caller (no defaults here); `rng` is required when
-    perturb is True.
+    Reads its parameters from the already-finalized `config`; `rng` is required when perturb is True.
     """
-    depb = layer_depths_from_bdepths(bdepths)
-    sigma = float(np.log(gsd))
+    loc = config.localization
+    depb = layer_depths_from_bdepths(config.bdepths)
+    sigma = float(np.log(config.gsd))
     dates = list(window.observation_times)
     target = window.target_time
     members = find_members(ctx.date_dir(target))
@@ -57,14 +56,13 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
         raise FileNotFoundError(f'No ensemble members for date {target}')
     M = len(members)
     bnlev = box_levels()
-    geometry = load_geometry(geometry_path)             # read + validate the workbook once
+    geometry = load_geometry(config.geometry)           # read + validate the workbook once
 
     # observations (per date), time-checked and stacked into 1-D (p,) vectors
-    batches, times = [], []
-    for d in dates:
-        batches.append(aggregate_observations(f'{measurements_dir}/{d}.dat', geometry,
-                                              bdepths, expected_time=float(d), time_tol=TIME_TOL))
-        times.append(float(d))
+    times = [float(d) for d in dates]
+    batches = [aggregate_observations(f'{config.measurements_dir}/{d}.dat', geometry,
+                                      config.bdepths, expected_time=t, time_tol=TIME_TOL)
+               for d, t in zip(dates, times)]
     nobs_per_date = [b['values'].shape[0] for b in batches]
     values = np.concatenate([b['values'] for b in batches])
     brefnum = np.concatenate([b['brefnum'] for b in batches])
@@ -81,28 +79,27 @@ def analyze(window: AnalysisWindow, ctx: RunContext, *, geometry_path, measureme
     metas = [None] * M
     for i, member in enumerate(members):
         states = []
-        for k, d in enumerate(dates):
+        for d, t in zip(dates, times):
             arr, header, footer, sed = read_state(
-                str(ctx.date_dir(d) / member / 'lastconc.xls'), bnlev, expected_time=float(d), time_tol=TIME_TOL)
+                str(ctx.date_dir(d) / member / 'lastconc.xls'), bnlev, expected_time=t, time_tol=TIME_TOL)
             states.append(arr)
-            if k == len(dates) - 1:
-                metas[i] = (header, footer, sed)
-        Xf[:, i] = np.stack(states)[Tind, Iind, Jind]       # gather (date, box, level) per state row
+        metas[i] = (header, footer, sed)                 # loop leaves header/footer/sed on the last date
+        Xf[:, i] = np.stack(states)[Tind, Iind, Jind]    # gather (date, box, level) per state row
     Xf = np.log(Xf)
 
     # covariance -> localization -> analysis
     B = localize_covariance(estimate_covariance(Xf), Iind, Jind, geometry.centers, depb,
-                            localization['exclude'], localization['horizontal_m'], localization['vertical_m'],
-                            Tind=Tind, obstimes=times, RcorT=localization['temporal_years'])
+                            loc['exclude'], loc['horizontal_m'], loc['vertical_m'],
+                            Tind=Tind, obstimes=times, RcorT=loc['temporal_years'])
     R = sigma ** 2 * np.eye(values.shape[0])
     sol = analysis_update(B, obs_idx, _perturbed_obs(y, M, sigma, perturb, rng), R, Xf)
 
     result = AnalysisResult(
         target=target, member_ids=list(members), obs_indices=obs_idx, observations=y, log_states=sol,
         box_id=(Iind + 1).astype(int), layer_id=(Jind + 1).astype(int),
-        time=np.array([times[t] for t in Tind], float),
+        time=np.asarray(times, float)[Tind],
         obs_box_id=brefnum.astype(int), obs_layer_id=breflev.astype(int),
-        obs_time=np.concatenate([np.full(n, t) for n, t in zip(nobs_per_date, times)]),
+        obs_time=np.repeat(times, nobs_per_date),
         diagnostics={'Nobs': int(values.shape[0]), 'Nstate': int(layout.n_state), 'Nens': M,
                      'anl_ind_start': int(layout.anl_ind_start), 'nobs_per_date': nobs_per_date,
                      'perturb': bool(perturb)},

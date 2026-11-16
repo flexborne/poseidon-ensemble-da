@@ -6,10 +6,10 @@ import numpy as np
 SURFACE_DEPTH_M = 10.0
 
 
-def _vertical_level(sdepth, nlev, bdepths) -> int:
-    """1-based depth bin for a point, clamped to this box's own level count."""
+def _vertical_level(nlev, bdepths) -> int:
+    """1-based depth bin for a surface measurement, clamped to this box's own level count."""
     for j in range(int(nlev)):
-        if sdepth < bdepths[j]:
+        if SURFACE_DEPTH_M < bdepths[j]:
             return j + 1
     return int(nlev)
 
@@ -59,7 +59,7 @@ def aggregate_observations(dat_path, geometry, bdepths, expected_time=None, time
         if len(bind) > 4:
             raise ValueError(f'measurement {i + 1} belongs to more than 4 boxes')
         for bj in bind:
-            blev = _vertical_level(SURFACE_DEPTH_M, boxnlev[bj], bdepths)   # per-box level count
+            blev = _vertical_level(boxnlev[bj], bdepths)        # per-box level count
             box_st[(bj, blev - 1)].append(sval[i])
 
     values, brefnum, breflev = [], [], []

@@ -48,7 +48,7 @@ def normalize_localization(overrides=None) -> dict:
     """
     loc = dict(DEFAULT_LOCALIZATION)
     loc.update(overrides or {})
-    loc['exclude'] = tuple(loc.get('exclude', ()))
+    loc['exclude'] = tuple(loc['exclude'])          # DEFAULT_LOCALIZATION always supplies 'exclude'
     return loc
 
 
@@ -139,7 +139,7 @@ def load_config(path) -> Config:
         target_time=target,
         observation_times=times,
         gsd=float(analysis.get('gsd', DEFAULT_GSD)),
-        bdepths=list(analysis['bdepths']) if 'bdepths' in analysis else list(DEFAULT_BDEPTHS),
+        bdepths=list(analysis.get('bdepths', DEFAULT_BDEPTHS)),
         localization=normalize_localization(raw.get('localization', {})),
         model_executable=_resolve(base, exe) if exe else None,
         launcher=list(model.get('launcher', [])),

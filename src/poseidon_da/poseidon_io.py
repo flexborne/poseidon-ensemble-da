@@ -43,15 +43,15 @@ def read_poseidon(pfile, bnlev):
             if nn in seen:
                 raise ValueError(f'read_poseidon: duplicate row for box {nn} in {pfile}')
             seen.add(nn)
-            expected_cols = int(bnlev[nn]) + 3
-            if len(C) != expected_cols:
+            nlev = int(bnlev[nn])
+            if len(C) != nlev + 3:
                 raise ValueError('read_poseidon: number of levels in bnlev is inconsistent with the data file')
-            for j in range(1, int(bnlev[nn]) + 1):
+            for j in range(1, nlev + 1):
                 value = float(C[j])
                 if not (np.isfinite(value) and value > 0.0):
                     raise ValueError(f'read_poseidon: non-positive/non-finite concentration for box {nn}, level {j} in {pfile}: {value}')
                 arr[nn - 1, j - 1] = value
-            s0, s1 = float(C[j + 1]), float(C[j + 2])
+            s0, s1 = float(C[nlev + 1]), float(C[nlev + 2])
             if not (np.isfinite(s0) and np.isfinite(s1)):
                 raise ValueError(f'read_poseidon: non-finite sediment value for box {nn} in {pfile}: {s0}, {s1}')
             sed[nn - 1, 0] = s0
@@ -90,7 +90,6 @@ def read_state(pfile, bnlev, expected_time, time_tol: float = 1e-6):
 def write_poseidon(fname, vect, Lind, bnlev, header, footer, sed):
     """Write a state vector as POSEIDON Initconc.dat; header/footer/sediments are carried over
     unchanged, values come from vect via the 1-based indices in Lind."""
-    vect = list(vect)
     path = Path(fname)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, 'w', encoding='utf-8', newline='\n') as fid:

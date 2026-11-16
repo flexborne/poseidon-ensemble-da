@@ -1,13 +1,12 @@
 """Stable public API: load a case, run the analysis, materialize a run."""
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
-
 
 from . import workflow
 from .config import (Config, load_config, normalize_localization,  # load_config re-exported
                      protected_inputs, raise_if_invalid, resolve_perturbation, validate, validate_diagnose)
+from .cycle import run_cycle  # noqa: F401  (re-exported as part of the public API)
 from .domain import AnalysisResult, AnalysisWindow, RunResult
 from .publish import assert_safe_dest, staged_publish
 from .results import build_manifest, export_result, write_manifest
@@ -24,9 +23,7 @@ def _prepare(config: Config) -> None:
 
 def _analyze(config: Config, ctx: RunContext, perturb, rng):
     window = AnalysisWindow(config.target_time, tuple(config.observation_times))
-    return workflow.analyze(
-        window, ctx, geometry_path=str(config.geometry), measurements_dir=str(config.measurements_dir),
-        gsd=config.gsd, localization=config.localization, bdepths=config.bdepths, perturb=perturb, rng=rng)
+    return workflow.analyze(window, ctx, config, perturb=perturb, rng=rng)
 
 
 def analyze(config: Config, *, perturb=True, rng=None, seed=None) -> AnalysisResult:
@@ -34,7 +31,7 @@ def analyze(config: Config, *, perturb=True, rng=None, seed=None) -> AnalysisRes
     _prepare(config)
     raise_if_invalid(validate(config))
     rng_obj, _ = resolve_perturbation(seed, rng, perturb)
-    ctx = RunContext.isolated(tempfile.mkdtemp(prefix='poseidon-analyze-'), runs_root=config.runs_root)
+    ctx = RunContext.isolated(config.runs_root, runs_root=config.runs_root)   # no files written here
     result, _ = _analyze(config, ctx, perturb, rng_obj)
     return result
 
@@ -111,6 +108,3 @@ def diagnose(config: Config, output_dir, *, date=None, force=False) -> RunResult
     return RunResult(status='ok', steps=steps,
                      outputs={'outputs_dir': str(out / 'outputs'), 'manifest': str(out / 'manifest.json')},
                      manifest=manifest)
-
-
-from .cycle import run_cycle  # noqa: E402  (re-export: the public API includes the cycle)
